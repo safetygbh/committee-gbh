@@ -1,0 +1,851 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ระบบส่งรายงานประชุม คณะกรรมการความปลอดภัย (คปอ.)</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js/dist/chart.umd.js"></script>
+    
+    <!-- Phosphor Icons -->
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    
+    <!-- jsPDF & html2canvas (เวอร์ชันใหม่ แก้ปัญหาสระ/วรรณยุกต์ภาษาไทย) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        thai: ['Sarabun', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; color: #1e293b; }
+        .font-thai { font-family: 'Sarabun', sans-serif; }
+        .tab-btn { position: relative; }
+        .tab-btn::after { content: ''; position: absolute; bottom: -1px; left: 0; width: 100%; height: 3px; background-color: transparent; transition: all 0.2s ease; border-radius: 3px 3px 0 0; }
+        .tab-btn.active { color: #1e40af; font-weight: 700; }
+        .tab-btn.active::after { background-color: #1e40af; }
+        .loader { border: 4px solid #f1f5f9; border-top: 4px solid #3b82f6; border-radius: 50%; width: 36px; height: 36px; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #f8fafc; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        .canvas-container { border: 1px solid #d1d5db; border-radius: 0.375rem; background-color: #ffffff; cursor: crosshair; }
+        .page-break-avoid { page-break-inside: avoid !important; break-inside: avoid !important; }
+
+        /* ========================================================== */
+        /* --- PDF PRINT STYLES --- */
+        /* ========================================================== */
+        .pdf-mode #report-container { width: 800px !important; max-width: 800px !important; margin: 0 auto !important; background-color: #fff !important; box-shadow: none !important; border: none !important; padding: 30px 40px !important; }
+        .pdf-mode .no-print { display: none !important; }
+        .pdf-text-replace { display: inline-block; width: 100%; min-height: 1.5em; font-family: 'Sarabun', sans-serif !important; font-size: 14px !important; color: #000; white-space: pre-wrap; word-wrap: break-word; word-break: break-word !important; line-height: 1.5 !important; }
+        .pdf-mode table { width: 100% !important; table-layout: fixed !important; border-collapse: collapse !important; }
+        .pdf-mode th, .pdf-mode td { border: 1px solid #333 !important; padding: 6px 8px !important; word-wrap: break-word !important; word-break: break-word !important; font-size: 13px !important; color: #000 !important; line-height: 1.5 !important; }
+        .pdf-mode h1, .pdf-mode h2, .pdf-mode h3, .pdf-mode h4 { line-height: 1.6 !important; }
+    </style>
+</head>
+<body class="min-h-screen pb-10">
+
+    <!-- Header -->
+    <header class="bg-white shadow-sm sticky top-0 z-40 border-b border-gray-100 no-print">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div>
+                    <h1 class="text-xl sm:text-2xl font-extrabold text-blue-900 leading-tight tracking-tight">ระบบรายงาน คปอ. ครบวงจร</h1>
+                    <p class="text-sm text-gray-500 font-medium mt-0.5">บริษัท สยามโกลบอลเฮ้าส์ จำกัด (มหาชน)</p>
+                </div>
+            </div>
+        </div>
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex gap-8 overflow-x-auto">
+            <button onclick="changeTab('dashboard')" id="tab-dashboard" class="tab-btn active whitespace-nowrap py-3 px-1 text-sm text-gray-500 hover:text-gray-800 transition"><i class="ph ph-chart-pie-slice mr-1"></i> ภาพรวม (Dashboard)</button>
+            <button onclick="changeTab('form')" id="tab-form" class="tab-btn whitespace-nowrap py-3 px-1 text-sm text-gray-500 hover:text-gray-800 transition"><i class="ph ph-file-text mr-1"></i> สร้างแบบฟอร์ม (PDF)</button>
+            <button onclick="changeTab('submit')" id="tab-submit" class="tab-btn whitespace-nowrap py-3 px-1 text-sm text-gray-500 hover:text-gray-800 transition"><i class="ph ph-upload-simple mr-1"></i> ส่งไฟล์เข้าระบบ</button>
+            <button onclick="changeTab('manage')" id="tab-manage" class="tab-btn whitespace-nowrap py-3 px-1 text-sm text-gray-500 hover:text-gray-800 transition"><i class="ph ph-folder mr-1"></i> ค้นหา / จัดการ</button>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-8">
+        
+        <!-- DASHBOARD VIEW -->
+        <div id="view-dashboard" class="view-section no-print">
+            <!-- (Dashboard content omitted for brevity but identical to previous versions, rendering charts and tables) -->
+            <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-6 bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
+                <div><h2 class="text-lg font-bold text-gray-900 tracking-tight">ภาพรวมการส่งรายงาน</h2><p class="text-xs text-gray-500 mt-1">เลือกเดือนและปีเพื่อดูข้อมูล</p></div>
+                <div class="flex flex-wrap items-center gap-3 w-full lg:w-auto">
+                    <select id="dash-month" onchange="renderDashboard()" class="border border-gray-200 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 bg-gray-50 hover:bg-gray-100 transition flex-1">
+                        <option value="">-- ทุกเดือน --</option><option value="มกราคม">มกราคม</option><option value="กุมภาพันธ์">กุมภาพันธ์</option><option value="มีนาคม">มีนาคม</option><option value="เมษายน">เมษายน</option><option value="พฤษภาคม">พฤษภาคม</option><option value="มิถุนายน">มิถุนายน</option><option value="กรกฎาคม">กรกฎาคม</option><option value="สิงหาคม">สิงหาคม</option><option value="กันยายน">กันยายน</option><option value="ตุลาคม">ตุลาคม</option><option value="พฤศจิกายน">พฤศจิกายน</option><option value="ธันวาคม">ธันวาคม</option>
+                    </select>
+                    <input type="number" id="dash-year" oninput="renderDashboard()" placeholder="พ.ศ. (เช่น 2569)" value="2569" class="border border-gray-200 rounded-xl px-4 py-2 text-sm w-32 focus:outline-none focus:ring-2 focus:ring-blue-500/20 bg-gray-50 hover:bg-gray-100 transition">
+                </div>
+            </div>
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+                <div class="lg:col-span-1 bg-gradient-to-br from-blue-50 to-indigo-50/50 border border-blue-100/60 rounded-2xl p-8 flex flex-col justify-center items-center text-center shadow-sm relative overflow-hidden min-h-[300px]">
+                    <div class="absolute top-0 right-0 -mt-6 -mr-6 w-32 h-32 bg-blue-500/10 rounded-full blur-3xl"></div>
+                    <div class="absolute bottom-0 left-0 -mb-6 -ml-6 w-32 h-32 bg-indigo-500/10 rounded-full blur-3xl"></div>
+                    <p class="text-blue-800 font-semibold text-sm mb-2 relative z-10">จำนวนสาขาที่ส่งรายงาน</p>
+                    <h3 id="dash-total-count" class="text-7xl font-extrabold text-blue-600 tracking-tight my-2 relative z-10 drop-shadow-sm">0</h3>
+                    <p class="text-sm text-blue-600/80 font-medium relative z-10 mt-1">ประจำ <span id="dash-label-month"></span> <span id="dash-label-year"></span></p>
+                </div>
+                <div class="lg:col-span-2 bg-white border border-gray-100 rounded-2xl p-6 shadow-sm flex flex-col min-h-[300px]">
+                    <h4 class="text-sm font-bold text-gray-800 mb-4 text-center">สถิติการส่งรายงาน (รายเดือน) ประจำปี <span id="chart-year-label">2569</span></h4>
+                    <div class="flex-1 relative w-full h-full min-h-[220px]"><canvas id="monthlyChart"></canvas></div>
+                </div>
+            </div>
+            <div class="bg-white border border-gray-100 rounded-2xl overflow-hidden shadow-sm flex flex-col">
+                <div class="p-5 border-b border-gray-50 flex justify-between items-center bg-gray-50/30">
+                    <h3 class="text-base font-bold text-gray-800">รายการส่งรายงานล่าสุด</h3>
+                    <div class="w-48 relative">
+                        <input type="text" id="dash-search-branch" oninput="renderDashboard()" placeholder="ค้นหาสาขา..." class="w-full border border-gray-200 rounded-xl px-4 py-2 text-xs focus:outline-none focus:ring-2 focus:border-blue-500 bg-white transition pr-8">
+                        <span class="absolute right-3 top-2 text-gray-400"><i class="ph ph-magnifying-glass text-lg"></i></span>
+                    </div>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm text-left">
+                        <thead class="text-xs text-gray-500 uppercase bg-gray-50 border-b border-gray-100">
+                            <tr><th class="px-6 py-4 font-semibold tracking-wider">สาขา</th><th class="px-6 py-4 font-semibold tracking-wider">ประจำเดือนของการประชุม</th><th class="px-6 py-4 font-semibold text-center tracking-wider">วันที่บันทึกเข้าระบบ</th><th class="px-6 py-4 font-semibold text-center tracking-wider">เอกสาร</th></tr>
+                        </thead>
+                        <tbody id="dash-table-body" class="divide-y divide-gray-50"></tbody>
+                    </table>
+                </div>
+                <div id="dash-empty" class="hidden py-16 text-center flex-col items-center justify-center"><i class="ph ph-folder-open text-4xl text-gray-300 mb-3 block"></i><p class="text-gray-500 font-medium">ไม่พบข้อมูลการส่งรายงานในเดือนนี้</p></div>
+                <div id="dash-pagination-controls" class="flex justify-between items-center p-4 border-t border-gray-100 bg-gray-50/50 hidden">
+                    <div class="text-xs text-gray-500 font-medium">แสดง <span id="dash-page-start" class="text-gray-900">0</span> ถึง <span id="dash-page-end" class="text-gray-900">0</span> จาก <span id="dash-page-total" class="text-gray-900">0</span> รายการ</div>
+                    <div class="flex gap-2">
+                        <button onclick="prevDashPage()" id="dash-btn-prev" class="px-3 py-1.5 border border-gray-200 rounded-lg text-xs font-medium bg-white hover:bg-gray-50 hover:text-blue-600 disabled:opacity-40 disabled:cursor-not-allowed shadow-sm">ก่อนหน้า</button>
+                        <button onclick="nextDashPage()" id="dash-btn-next" class="px-3 py-1.5 border border-gray-200 rounded-lg text-xs font-medium bg-white hover:bg-gray-50 hover:text-blue-600 disabled:opacity-40 disabled:cursor-not-allowed shadow-sm">ถัดไป</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- FORM VIEW (PDF Generator) -->
+        <div id="view-form" class="view-section hidden max-w-4xl mx-auto font-thai text-gray-800">
+            <!-- Form Action Buttons -->
+            <div class="no-print flex flex-wrap justify-end gap-3 mb-4">
+                <button onclick="loadDraftFromStorage()" class="flex items-center px-4 py-2 bg-amber-500 text-white rounded-lg hover:bg-amber-600 transition shadow-sm font-medium text-sm font-sans">
+                    <i class="ph ph-clock-counter-clockwise text-lg mr-2"></i> กู้คืนแบบร่างล่าสุด
+                </button>
+                <button onclick="saveDraftToStorage()" class="flex items-center px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition shadow-sm font-medium text-sm font-sans">
+                    <i class="ph ph-floppy-disk text-lg mr-2"></i> บันทึกแบบร่างชั่วคราว
+                </button>
+                <button onclick="generateAndSavePDF()" id="btn-pdf" class="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition shadow-sm font-medium text-sm font-sans">
+                    <i class="ph ph-file-pdf text-lg mr-2"></i> สร้างและบันทึก PDF เข้าระบบ
+                </button>
+            </div>
+
+            <!-- Report Container -->
+            <div id="pdf-wrapper" class="w-full flex justify-center">
+                <div id="report-container" class="bg-white shadow-md rounded-xl p-8 mb-10 border border-gray-200 w-full relative">
+                    <!-- Header -->
+                    <div class="text-center mb-8 border-b-2 border-gray-800 pb-4">
+                        <h1 class="text-2xl font-bold mb-2">รายงานการประชุมคณะกรรมการความปลอดภัย อาชีวอนามัย และสภาพแวดล้อมในการทำงาน (คปอ.)</h1>
+                        
+                        <div class="mt-4 mb-3 flex justify-center items-center font-sans">
+                            <span class="font-semibold mr-2 text-gray-700">สาขา:</span>
+                            <select id="branch-select" class="border border-gray-300 rounded p-1.5 focus:outline-none focus:border-blue-500 bg-gray-50 min-w-[200px] text-sm text-center">
+                                <option value="" disabled selected>-- เลือกสาขา --</option>
+                            </select>
+                        </div>
+
+                        <div class="mb-4 flex flex-wrap justify-center items-center font-sans gap-4">
+                            <div class="flex items-center">
+                                <span class="font-semibold mr-2 text-gray-700">ประจำเดือนของการประชุม:</span>
+                                <select id="meeting-month-select" class="border border-gray-300 rounded p-1.5 focus:outline-none focus:border-blue-500 bg-gray-50 min-w-[120px] text-sm text-center">
+                                    <option value="" disabled selected>-- เลือกเดือน --</option>
+                                    <option value="มกราคม">มกราคม</option><option value="กุมภาพันธ์">กุมภาพันธ์</option><option value="มีนาคม">มีนาคม</option><option value="เมษายน">เมษายน</option><option value="พฤษภาคม">พฤษภาคม</option><option value="มิถุนายน">มิถุนายน</option><option value="กรกฎาคม">กรกฎาคม</option><option value="สิงหาคม">สิงหาคม</option><option value="กันยายน">กันยายน</option><option value="ตุลาคม">ตุลาคม</option><option value="พฤศจิกายน">พฤศจิกายน</option><option value="ธันวาคม">ธันวาคม</option>
+                                </select>
+                            </div>
+                            <div class="flex items-center">
+                                <span class="font-semibold mr-2 text-gray-700">ปี พ.ศ.:</span>
+                                <input type="number" id="meeting-year-select" class="border border-gray-300 rounded p-1.5 focus:outline-none focus:border-blue-500 bg-gray-50 w-24 text-sm text-center" placeholder="เช่น 2569">
+                            </div>
+                        </div>
+
+                        <div class="flex justify-center items-center space-x-2 text-lg mt-2">
+                            <span>ครั้งที่</span>
+                            <input type="text" id="meeting-no" class="border-b border-gray-400 focus:outline-none focus:border-blue-500 w-16 text-center py-1 bg-transparent" placeholder="ระบุ">
+                            <span>/</span>
+                            <input type="text" id="meeting-year" class="border-b border-gray-400 focus:outline-none focus:border-blue-500 w-20 text-center py-1 bg-transparent" placeholder="พ.ศ.">
+                        </div>
+                    </div>
+
+                    <!-- Meeting Info -->
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8 bg-gray-50 p-4 rounded border border-gray-200 page-break-avoid">
+                        <div>
+                            <label class="block text-sm font-bold text-gray-700 mb-1">วันที่ประชุม</label>
+                            <input type="date" id="meeting-date" class="w-full border-b border-gray-300 focus:outline-none focus:border-blue-500 py-1 bg-transparent font-sans">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-bold text-gray-700 mb-1">เวลาเริ่มประชุม</label>
+                            <div class="flex items-center">
+                                <input type="time" id="meeting-time" class="w-full border-b border-gray-300 focus:outline-none focus:border-blue-500 py-1 bg-transparent font-sans">
+                                <span class="ml-2">น.</span>
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-bold text-gray-700 mb-1">สถานที่ประชุม</label>
+                            <input type="text" id="meeting-location" class="w-full border-b border-gray-300 focus:outline-none focus:border-blue-500 py-1 bg-transparent" placeholder="ระบุห้องประชุม/สถานที่">
+                        </div>
+                    </div>
+
+                    <!-- Attendees Section -->
+                    <div class="mb-6 page-break-avoid">
+                        <h2 class="text-xl font-bold mb-4 bg-gray-100 p-2 rounded border-l-4 border-blue-500">รายชื่อผู้เข้าร่วมประชุม</h2>
+                        <div class="overflow-x-auto w-full">
+                            <table class="w-full border-collapse border border-gray-300 mb-4" id="attendees-table">
+                                <thead>
+                                    <tr class="bg-gray-50">
+                                        <th class="border border-gray-300 p-2 w-[10%] text-center">ลำดับ</th>
+                                        <th class="border border-gray-300 p-2 text-left w-[40%]">ชื่อ - นามสกุล</th>
+                                        <th class="border border-gray-300 p-2 text-left w-[40%]">ตำแหน่งใน คปอ.</th>
+                                        <th class="border border-gray-300 p-2 w-[10%] text-center no-print">จัดการ</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="attendees-body"></tbody>
+                            </table>
+                        </div>
+                        <button onclick="addAttendee()" class="no-print flex items-center px-3 py-1.5 bg-blue-50 text-blue-600 border border-blue-200 rounded hover:bg-blue-100 transition text-sm font-medium font-sans">
+                            <i class="ph ph-plus-circle mr-1 text-lg"></i> เพิ่มรายชื่อผู้เข้าประชุม
+                        </button>
+                    </div>
+                    
+                    <!-- Absent Attendees Section -->
+                    <div class="mb-8 page-break-avoid">
+                        <h2 class="text-xl font-bold mb-4 bg-gray-100 p-2 rounded border-l-4 border-orange-500">รายชื่อผู้ไม่เข้าร่วมประชุม (ถ้ามี)</h2>
+                        <div class="overflow-x-auto w-full">
+                            <table class="w-full border-collapse border border-gray-300 mb-4" id="absent-attendees-table">
+                                <thead>
+                                    <tr class="bg-gray-50">
+                                        <th class="border border-gray-300 p-2 w-[10%] text-center">ลำดับ</th>
+                                        <th class="border border-gray-300 p-2 text-left w-[40%]">ชื่อ - นามสกุล</th>
+                                        <th class="border border-gray-300 p-2 text-left w-[40%]">ตำแหน่งใน คปอ. / สาเหตุที่ขาด</th>
+                                        <th class="border border-gray-300 p-2 w-[10%] text-center no-print">จัดการ</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="absent-attendees-body"></tbody>
+                            </table>
+                        </div>
+                        <button onclick="addAbsentAttendee()" class="no-print flex items-center px-3 py-1.5 bg-orange-50 text-orange-600 border border-orange-200 rounded hover:bg-orange-100 transition text-sm font-medium font-sans">
+                            <i class="ph ph-plus-circle mr-1 text-lg"></i> เพิ่มรายชื่อผู้ไม่เข้าประชุม
+                        </button>
+                    </div>
+
+                    <!-- Agendas Section -->
+                    <div class="mb-8 space-y-6">
+                        <h2 class="text-xl font-bold mb-4 bg-gray-100 p-2 rounded border-l-4 border-blue-500">รายละเอียดการประชุม</h2>
+                        
+                        <div class="border border-gray-200 rounded p-4 page-break-avoid">
+                            <h3 class="font-bold text-lg mb-2"><span class="mr-2 text-blue-700">วาระที่ 1</span>เรื่องที่ประธานแจ้งให้ที่ประชุมทราบ</h3>
+                            <textarea id="agenda-1" class="w-full min-h-[100px] p-2 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500" placeholder="พิมพ์รายละเอียด..."></textarea>
+                            <div class="mt-3 no-print">
+                                <label class="text-sm font-medium text-gray-500 block mb-1">แนบรูปภาพประกอบ (ถ้ามี)</label>
+                                <input type="file" accept="image/*" class="text-sm font-sans" onchange="previewAgendaImage(this, 'img-agenda-1')">
+                            </div>
+                            <div class="mt-2 text-center"><img id="img-agenda-1" src="data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=" class="max-h-[300px] object-contain mx-auto hidden"></div>
+                        </div>
+                        
+                        <div class="border border-gray-200 rounded p-4 page-break-avoid">
+                            <h3 class="font-bold text-lg mb-2"><span class="mr-2 text-blue-700">วาระที่ 2</span>รับรองรายงานการประชุมครั้งที่ผ่านมา</h3>
+                            <textarea id="agenda-2" class="w-full min-h-[100px] p-2 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500" placeholder="พิมพ์รายละเอียด..."></textarea>
+                            <div class="mt-3 no-print">
+                                <label class="text-sm font-medium text-gray-500 block mb-1">แนบรูปภาพประกอบ (ถ้ามี)</label>
+                                <input type="file" accept="image/*" class="text-sm font-sans" onchange="previewAgendaImage(this, 'img-agenda-2')">
+                            </div>
+                            <div class="mt-2 text-center"><img id="img-agenda-2" src="data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=" class="max-h-[300px] object-contain mx-auto hidden"></div>
+                        </div>
+                        
+                        <div class="border border-gray-200 rounded p-4 page-break-avoid">
+                            <h3 class="font-bold text-lg mb-2"><span class="mr-2 text-blue-700">วาระที่ 3</span>เรื่องสืบเนื่องจากการประชุมครั้งที่ผ่านมา</h3>
+                            <textarea id="agenda-3" class="w-full min-h-[120px] p-2 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500" placeholder="พิมพ์รายละเอียด..."></textarea>
+                            <div class="mt-3 no-print">
+                                <label class="text-sm font-medium text-gray-500 block mb-1">แนบรูปภาพประกอบ (ถ้ามี)</label>
+                                <input type="file" accept="image/*" class="text-sm font-sans" onchange="previewAgendaImage(this, 'img-agenda-3')">
+                            </div>
+                            <div class="mt-2 text-center"><img id="img-agenda-3" src="data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=" class="max-h-[300px] object-contain mx-auto hidden"></div>
+                        </div>
+                        
+                        <div class="border border-gray-200 rounded p-4 page-break-avoid">
+                            <h3 class="font-bold text-lg mb-2"><span class="mr-2 text-blue-700">วาระที่ 4</span>เรื่องพิจารณา (โครงการ/กิจกรรมด้านความปลอดภัย)</h3>
+                            <textarea id="agenda-4" class="w-full min-h-[150px] p-2 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500" placeholder="พิมพ์รายละเอียด..."></textarea>
+                            <div class="mt-3 no-print">
+                                <label class="text-sm font-medium text-gray-500 block mb-1">แนบรูปภาพประกอบ (ถ้ามี)</label>
+                                <input type="file" accept="image/*" class="text-sm font-sans" onchange="previewAgendaImage(this, 'img-agenda-4')">
+                            </div>
+                            <div class="mt-2 text-center"><img id="img-agenda-4" src="data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=" class="max-h-[300px] object-contain mx-auto hidden"></div>
+                        </div>
+                        
+                        <div class="border border-gray-200 rounded p-4 page-break-avoid">
+                            <h3 class="font-bold text-lg mb-2"><span class="mr-2 text-blue-700">วาระที่ 5</span>เรื่องอื่นๆ (ถ้ามี)</h3>
+                            <textarea id="agenda-5" class="w-full min-h-[100px] p-2 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500" placeholder="พิมพ์รายละเอียด..."></textarea>
+                            <div class="mt-3 no-print">
+                                <label class="text-sm font-medium text-gray-500 block mb-1">แนบรูปภาพประกอบ (ถ้ามี)</label>
+                                <input type="file" accept="image/*" class="text-sm font-sans" onchange="previewAgendaImage(this, 'img-agenda-5')">
+                            </div>
+                            <div class="mt-2 text-center"><img id="img-agenda-5" src="data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=" class="max-h-[300px] object-contain mx-auto hidden"></div>
+                        </div>
+                    </div>
+
+                    <!-- Safety Patrol Section -->
+                    <div class="mb-8" style="page-break-before: always;">
+                        <div class="flex justify-between items-end mb-4 bg-emerald-50 text-emerald-900 border-l-4 border-emerald-500 p-3 rounded-r">
+                            <h2 class="text-xl font-bold">รายงาน Safety Patrol (ข้อบกพร่องจากการเดินตรวจ)</h2>
+                        </div>
+                        <div class="bg-gray-50/50 rounded p-1 mb-4 border border-gray-200">
+                            <div class="flex items-center gap-3 mb-6 p-4 border-b border-gray-200 bg-white">
+                                <span class="font-bold">วันที่เดินตรวจ:</span>
+                                <input type="date" id="patrol-date" class="border-b border-gray-300 focus:outline-none focus:border-blue-500 py-1 bg-transparent font-sans">
+                            </div>
+                            
+                            <!-- Patrol Attendees -->
+                            <div class="mb-6 px-4 page-break-avoid">
+                                <h3 class="font-bold mb-3 text-gray-800">รายชื่อผู้เข้าร่วมเดินตรวจ</h3>
+                                <div class="overflow-x-auto w-full">
+                                    <table class="w-full border-collapse border border-gray-300 mb-3" id="patrol-attendees-table">
+                                        <thead>
+                                            <tr class="bg-gray-100">
+                                                <th class="border border-gray-300 p-2 w-[10%] text-center">ลำดับ</th>
+                                                <th class="border border-gray-300 p-2 text-left w-[40%]">ชื่อ - นามสกุล</th>
+                                                <th class="border border-gray-300 p-2 text-left w-[40%]">หน่วยงาน/ตำแหน่ง</th>
+                                                <th class="border border-gray-300 p-2 w-[10%] text-center no-print">จัดการ</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="patrol-attendees-body"></tbody>
+                                    </table>
+                                </div>
+                                <div class="flex flex-wrap gap-2 no-print font-sans">
+                                    <button onclick="addPatrolAttendee()" class="flex items-center px-3 py-1.5 bg-blue-50 text-blue-600 border border-blue-200 rounded hover:bg-blue-100 transition text-sm font-medium">
+                                        <i class="ph ph-plus-circle mr-1 text-lg"></i> เพิ่มรายชื่อผู้เดินตรวจ
+                                    </button>
+                                    <button onclick="copyAllMeetingAttendees()" class="flex items-center px-3 py-1.5 bg-emerald-50 text-emerald-600 border border-emerald-200 rounded hover:bg-emerald-100 transition text-sm font-medium">
+                                        <i class="ph ph-users mr-1 text-lg"></i> คัดลอกรายชื่อจากที่ประชุม
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Defects -->
+                            <div class="px-4 pb-4">
+                                <h3 class="font-bold mb-3 text-gray-800 border-t pt-4">รายการข้อบกพร่องที่พบ และการแก้ไข</h3>
+                                <div id="defects-container" class="space-y-4 mb-3"></div>
+                                <button onclick="addDefect()" class="no-print flex items-center px-3 py-1.5 bg-red-50 text-red-600 border border-red-200 rounded hover:bg-red-100 transition text-sm font-medium font-sans">
+                                    <i class="ph ph-plus-circle mr-1 text-lg"></i> เพิ่มรายการข้อบกพร่อง
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Closing Info & Signatures -->
+                    <div class="mb-12 flex items-center space-x-2 text-lg page-break-avoid">
+                        <span class="font-bold">ปิดประชุมเวลา:</span>
+                        <input type="time" id="meeting-close-time" class="border-b border-gray-300 focus:outline-none focus:border-blue-500 py-1 w-24 font-sans text-center">
+                        <span>น.</span>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-12 mt-12 page-break-avoid">
+                        <div class="flex flex-col items-center">
+                            <div class="relative mb-2 no-print w-full max-w-[300px]" id="creator-canvas-container">
+                                <div class="flex justify-between items-center mb-1 font-sans">
+                                    <span class="text-sm text-gray-500 font-medium">เซ็นชื่อผู้จัดทำ:</span>
+                                    <button onclick="clearCanvas('creator-canvas')" class="text-xs text-red-500 hover:text-red-700 underline">ลบลายเซ็น</button>
+                                </div>
+                                <canvas id="creator-canvas" class="canvas-container w-full" width="300" height="120"></canvas>
+                            </div>
+                            <img id="creator-img" class="mb-2 max-w-[300px] h-[120px] object-contain hidden" src="data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=" alt="ลายเซ็น">
+                            <div class="text-center w-full max-w-[300px]">
+                                <div class="flex items-center justify-center space-x-1 mb-2">
+                                    <span>(</span><input type="text" id="creator-name" class="border-b border-gray-400 focus:outline-none focus:border-blue-500 w-full text-center py-1 bg-transparent" placeholder="ชื่อ-นามสกุล ตัวบรรจง"><span>)</span>
+                                </div>
+                                <input type="text" id="creator-position" class="border-b border-gray-400 focus:outline-none focus:border-blue-500 w-full text-center py-1 mb-1 bg-transparent" placeholder="ตำแหน่ง" value="เลขานุการ คปอ.">
+                                <p class="text-sm text-gray-600 mt-2">ผู้จดรายงานการประชุม</p>
+                            </div>
+                        </div>
+
+                        <div class="flex flex-col items-center">
+                            <div class="relative mb-2 no-print w-full max-w-[300px]" id="approver-canvas-container">
+                                <div class="flex justify-between items-center mb-1 font-sans">
+                                    <span class="text-sm text-gray-500 font-medium">เซ็นชื่อผู้รับรอง:</span>
+                                    <button onclick="clearCanvas('approver-canvas')" class="text-xs text-red-500 hover:text-red-700 underline">ลบลายเซ็น</button>
+                                </div>
+                                <canvas id="approver-canvas" class="canvas-container w-full" width="300" height="120"></canvas>
+                            </div>
+                            <img id="approver-img" class="mb-2 max-w-[300px] h-[120px] object-contain hidden" src="data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=" alt="ลายเซ็น">
+                            <div class="text-center w-full max-w-[300px]">
+                                <div class="flex items-center justify-center space-x-1 mb-2">
+                                    <span>(</span><input type="text" id="approver-name" class="border-b border-gray-400 focus:outline-none focus:border-blue-500 w-full text-center py-1 bg-transparent" placeholder="ชื่อ-นามสกุล ตัวบรรจง"><span>)</span>
+                                </div>
+                                <input type="text" id="approver-position" class="border-b border-gray-400 focus:outline-none focus:border-blue-500 w-full text-center py-1 mb-1 bg-transparent" placeholder="ตำแหน่ง" value="ประธาน คปอ.">
+                                <p class="text-sm text-gray-600 mt-2">ผู้ตรวจรับรองรายงานการประชุม</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- SUBMIT VIEW (Omitted structure details for brevity, remains same) -->
+        <div id="view-submit" class="view-section hidden max-w-3xl mx-auto no-print">
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-10">
+                <div class="mb-8 border-b border-gray-100 pb-5"><h2 class="text-2xl font-bold text-gray-900">แบบฟอร์มส่งรายงานเข้าระบบ</h2></div>
+                <form id="submitForm" onsubmit="handleFormSubmit(event)" class="space-y-6">
+                    <input type="hidden" id="form-id"> 
+                    <!-- Existing Input Fields -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div><label class="block text-sm font-semibold mb-1.5">ชื่อ-นามสกุล</label><input type="text" id="input-name" required class="w-full border rounded-xl px-4 py-3 bg-gray-50 text-sm"></div>
+                        <div><label class="block text-sm font-semibold mb-1.5">สาขา</label><select id="input-branch" required class="w-full border rounded-xl px-4 py-3 bg-gray-50 text-sm"><option value="">-- โหลดข้อมูลสาขา... --</option></select></div>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div><label class="block text-sm font-semibold mb-1.5">วันที่จัดประชุม</label><input type="date" id="input-meetDate" required class="w-full border rounded-xl px-4 py-3 bg-gray-50 text-sm"></div>
+                        <div><label class="block text-sm font-semibold mb-1.5">วันที่เดิน Patrol</label><input type="date" id="input-patrolDate" required class="w-full border rounded-xl px-4 py-3 bg-gray-50 text-sm"></div>
+                    </div>
+                    <div class="bg-blue-50/50 p-5 rounded-xl border border-blue-100/50">
+                        <label class="block text-sm font-semibold text-blue-900 mb-3">ประจำเดือนของการประชุม</label>
+                        <div class="flex flex-col sm:flex-row gap-4">
+                            <select id="input-month" required class="w-full sm:w-1/2 border border-blue-200 rounded-xl px-4 py-3 text-sm"><option value="">-- เลือกเดือน --</option><option value="มกราคม">มกราคม</option><option value="กุมภาพันธ์">กุมภาพันธ์</option><option value="มีนาคม">มีนาคม</option><option value="เมษายน">เมษายน</option><option value="พฤษภาคม">พฤษภาคม</option><option value="มิถุนายน">มิถุนายน</option><option value="กรกฎาคม">กรกฎาคม</option><option value="สิงหาคม">สิงหาคม</option><option value="กันยายน">กันยายน</option><option value="ตุลาคม">ตุลาคม</option><option value="พฤศจิกายน">พฤศจิกายน</option><option value="ธันวาคม">ธันวาคม</option></select>
+                            <input type="number" id="input-year" required placeholder="พ.ศ. (เช่น 2569)" class="w-full sm:w-1/2 border border-blue-200 rounded-xl px-4 py-3 text-sm">
+                        </div>
+                    </div>
+                    <div class="space-y-5 pt-4">
+                        <div class="w-full"><label class="block text-xs font-semibold mb-2">ไฟล์ คปอ.</label><input type="file" id="input-fileMeet" accept=".pdf" class="w-full border rounded-xl px-3 py-2 text-sm bg-gray-50"><div id="edit-fileMeet-link" class="text-xs text-blue-600 mt-2 font-medium hidden"></div></div>
+                        <div class="w-full"><label class="block text-xs font-semibold mb-2">ไฟล์ Patrol</label><input type="file" id="input-filePatrol" accept=".pdf" class="w-full border rounded-xl px-3 py-2 text-sm bg-gray-50"><div id="edit-filePatrol-link" class="text-xs text-emerald-600 mt-2 font-medium hidden"></div></div>
+                    </div>
+                    <div class="pt-6"><button type="submit" id="btn-submit" class="w-full bg-blue-600 text-white font-bold py-3.5 rounded-xl hover:bg-blue-700 flex items-center justify-center gap-2"><i class="ph ph-upload-simple text-xl mr-1"></i> ส่งรายงาน</button></div>
+                </form>
+            </div>
+        </div>
+
+        <!-- MANAGE VIEW (Omitted structure details for brevity) -->
+        <div id="view-manage" class="view-section hidden no-print">
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8">
+                <!-- Search & Table here -->
+                <div class="flex flex-col md:flex-row justify-between items-end gap-4 mb-6">
+                    <div class="w-full md:w-auto grid grid-cols-1 sm:grid-cols-3 gap-3 flex-1">
+                        <div><input type="text" id="search-branch" placeholder="ชื่อสาขา..." class="w-full border rounded-xl px-4 py-2.5 text-sm bg-gray-50"></div>
+                        <div><select id="search-month" class="w-full border rounded-xl px-4 py-2.5 text-sm bg-gray-50"><option value="">ทุกเดือน</option><option value="มกราคม">มกราคม</option><option value="กุมภาพันธ์">กุมภาพันธ์</option><option value="มีนาคม">มีนาคม</option><option value="เมษายน">เมษายน</option><option value="พฤษภาคม">พฤษภาคม</option><option value="มิถุนายน">มิถุนายน</option><option value="กรกฎาคม">กรกฎาคม</option><option value="สิงหาคม">สิงหาคม</option><option value="กันยายน">กันยายน</option><option value="ตุลาคม">ตุลาคม</option><option value="พฤศจิกายน">พฤศจิกายน</option><option value="ธันวาคม">ธันวาคม</option></select></div>
+                        <div><input type="number" id="search-year" placeholder="ปี พ.ศ." class="w-full border rounded-xl px-4 py-2.5 text-sm bg-gray-50"></div>
+                    </div>
+                    <button onclick="executeSearch()" class="w-full md:w-auto bg-gray-800 text-white px-6 py-2.5 rounded-xl text-sm font-semibold hover:bg-gray-900 shadow-sm">ค้นหา</button>
+                </div>
+                <div class="border border-gray-100 rounded-2xl overflow-hidden shadow-sm">
+                    <div class="overflow-x-auto min-h-[400px]">
+                        <table class="w-full text-sm text-left"><thead class="text-xs text-gray-500 uppercase bg-gray-50 border-b"><tr><th class="px-5 py-4">สาขา</th><th class="px-5 py-4">ผู้ส่ง</th><th class="px-5 py-4">ประจำเดือน</th><th class="px-5 py-4">ประชุม / เดินตรวจ</th><th class="px-5 py-4 text-center">เอกสาร</th><th class="px-5 py-4 text-center">จัดการ</th></tr></thead><tbody id="search-table-body" class="divide-y divide-gray-50"></tbody></table>
+                        <div id="search-empty" class="hidden p-12 text-center flex-col items-center justify-center h-[350px]"><i class="ph ph-magnifying-glass text-4xl text-gray-300 mb-3 block"></i><p class="text-gray-500 font-medium">ไม่พบข้อมูลที่ค้นหา</p></div>
+                    </div>
+                </div>
+                <div id="pagination-controls" class="flex justify-between items-center mt-6 hidden">
+                    <div class="text-sm text-gray-500">แสดง <span id="page-start" class="text-gray-900">0</span> ถึง <span id="page-end" class="text-gray-900">0</span> จาก <span id="page-total" class="text-gray-900">0</span></div>
+                    <div class="flex gap-2"><button onclick="prevPage()" id="btn-prev" class="px-4 py-2 border rounded-xl text-sm bg-white hover:bg-gray-50">ก่อนหน้า</button><button onclick="nextPage()" id="btn-next" class="px-4 py-2 border rounded-xl text-sm bg-white hover:bg-gray-50">ถัดไป</button></div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- UI Overlay / Modal -->
+    <div id="loading-overlay" class="fixed inset-0 bg-white/80 backdrop-blur-sm z-50 hidden flex-col items-center justify-center no-print">
+        <div class="loader mb-4 shadow-sm"></div>
+        <p id="loading-text" class="text-blue-900 font-semibold tracking-wide">กำลังดำเนินการ...</p>
+    </div>
+    <div id="notif-modal" class="fixed inset-0 bg-gray-900/40 backdrop-blur-sm z-50 hidden items-center justify-center p-4 no-print">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-8 text-center transform scale-95 transition-transform duration-200">
+            <div id="notif-icon" class="w-16 h-16 mx-auto rounded-full flex items-center justify-center text-3xl mb-5 shadow-sm"></div>
+            <h3 id="notif-title" class="text-xl font-bold text-gray-900 mb-2"></h3>
+            <p id="notif-msg" class="text-sm text-gray-500 mb-8"></p>
+            <button onclick="closeNotif()" class="w-full bg-gray-900 text-white rounded-xl py-3 font-semibold hover:bg-black transition shadow-md">ตกลง</button>
+        </div>
+    </div>
+
+    <script>
+        /* ========================================================= */
+        /* --- CORE CONFIG & STATE --- */
+        /* ========================================================= */
+        const GAS_URL = "https://script.google.com/macros/s/AKfycbyQ__6ZR6OeStgs30CHWTpK702S4a4SmhDQYlwBtSeszyk-mzbjsbuvmx6PnYTgV_ts/exec";
+        let dbData = []; let branchList = []; let chartInstance = null;
+        let currentSearchData = []; let currentPage = 1; const itemsPerPage = 10;
+        let dashFilteredData = []; let dashCurrentPage = 1; const dashItemsPerPage = 10;
+
+        let attendeeCount = 0; let absentAttendeeCount = 0; let patrolAttendeeCount = 0; let defectCount = 0;
+        const drawingContexts = {}; const isDrawing = {};
+        const positions = ["ประธานกรรมการ", "กรรมการ (ผู้แทนระดับบังคับบัญชา)", "กรรมการ (ผู้แทนระดับปฏิบัติการ)", "เลขานุการ"];
+
+        window.onload = function() {
+            changeTab('dashboard');
+            fetchDataFromGAS();
+            fetchBranchesFromGAS();
+            initForm();
+        }
+
+        /* ========================================================= */
+        /* --- UTILS --- */
+        /* ========================================================= */
+        function changeTab(tabName) {
+            document.querySelectorAll('.view-section').forEach(el => el.classList.add('hidden'));
+            document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+            document.getElementById(`view-${tabName}`).classList.remove('hidden');
+            document.getElementById(`tab-${tabName}`).classList.add('active');
+            if(tabName === 'dashboard') renderDashboard();
+            if(tabName === 'manage') executeSearch();
+        }
+        function showLoading(text = "กำลังดำเนินการ...") { document.getElementById('loading-text').innerText = text; document.getElementById('loading-overlay').style.display = 'flex'; }
+        function hideLoading() { document.getElementById('loading-overlay').style.display = 'none'; }
+        function showNotif(type, title, msg) {
+            const m = document.getElementById('notif-modal'); const i = document.getElementById('notif-icon');
+            document.getElementById('notif-title').innerText = title; document.getElementById('notif-msg').innerText = msg;
+            if (type === 'success') { i.innerHTML = '<i class="ph ph-check-circle"></i>'; i.className = "w-16 h-16 mx-auto rounded-full flex items-center justify-center text-4xl mb-5 bg-green-50 text-green-500 border border-green-100"; }
+            else { i.innerHTML = '<i class="ph ph-warning-circle"></i>'; i.className = "w-16 h-16 mx-auto rounded-full flex items-center justify-center text-4xl mb-5 bg-red-50 text-red-500 border border-red-100"; }
+            m.style.display = 'flex';
+        }
+        function closeNotif() { document.getElementById('notif-modal').style.display = 'none'; }
+
+        /* ========================================================= */
+        /* --- FETCH DATA --- */
+        /* ========================================================= */
+        async function fetchBranchesFromGAS() {
+            try {
+                const response = await fetch(`${GAS_URL}?action=getBranches`, { method: 'GET' });
+                const result = await response.json();
+                if (result.success || result.status === 'success') { branchList = result.data || []; populateBranchDropdown(branchList); } else { useMockBranches(); }
+            } catch (error) { useMockBranches(); }
+        }
+        function useMockBranches() { branchList = ["สาขาร้อยเอ็ด", "สาขาขอนแก่น", "สาขาอุดรธานี", "สาขามหาสารคาม", "สาขากาฬสินธุ์", "สาขาโคราช", "สาขาเชียงใหม่", "สาขาชลบุรี"]; populateBranchDropdown(branchList); }
+        function populateBranchDropdown(branches) {
+            const selects = [document.getElementById('input-branch'), document.getElementById('branch-select')];
+            selects.forEach(select => {
+                if(!select) return; select.innerHTML = '<option value="">-- เลือกสาขา --</option>';
+                branches.forEach(b => { const name = typeof b === 'string' ? b : (b.name || b.branchName || b[0]); if(name) select.appendChild(new Option(name, name)); });
+            });
+        }
+        async function fetchDataFromGAS() {
+            showLoading("กำลังโหลดข้อมูลจากฐานข้อมูล...");
+            try {
+                const response = await fetch(`${GAS_URL}?action=getData`, { method: 'GET' });
+                const result = await response.json();
+                if (result.success || result.status === 'success') {
+                    dbData = (result.data || []).map((item, index) => {
+                        item.originalIndex = index; let rm = String(item.monthYear || "").trim();
+                        if (rm.includes('T') && rm.includes('-')) { const d = new Date(rm); if (!isNaN(d.getTime())) { let y = d.getFullYear(); if(y<2500) y+=543; const ms = ["มกราคม","กุมภาพันธ์","มีนาคม","เมษายน","พฤษภาคม","มิถุนายน","กรกฎาคม","สิงหาคม","กันยายน","ตุลาคม","พฤศจิกายน","ธันวาคม"]; rm = `เดือน${ms[d.getMonth()]} ${y}`; } }
+                        else if (rm !== "" && !rm.includes('เดือน')) rm = "เดือน" + rm;
+                        item.monthYear = rm; return item;
+                    });
+                } else { loadMockData(); }
+            } catch (error) { loadMockData(); } finally { hideLoading(); if(!document.getElementById('view-dashboard').classList.contains('hidden')) renderDashboard(); if(!document.getElementById('view-manage').classList.contains('hidden')) executeSearch(); }
+        }
+        function loadMockData() { dbData = [{ id: "1", originalIndex: 1, timestamp: "01/08/2026", name: "สมชาย ใจดี", branch: "สาขาร้อยเอ็ด", meetDate: "2026-08-01", patrolDate: "2026-08-02", monthYear: "เดือนสิงหาคม 2569", fileMeet: "#", filePatrol: "#" }]; }
+        function formatDateTH(dateString) {
+            if (!dateString || dateString === "-" || dateString === "#") return "-"; let datePart = String(dateString).split('T')[0];
+            if (datePart.includes('-')) { let parts = datePart.split('-'); if (parts.length === 3) { let y = parseInt(parts[0]), m = parts[1], d = parts[2]; if (y < 2500) y += 543; return `${d}/${m}/${y}`; } } return dateString;
+        }
+
+        /* ========================================================= */
+        /* --- DASHBOARD & MANAGE --- */
+        /* ========================================================= */
+        function renderDashboard() {
+            const m = document.getElementById('dash-month').value.trim(); const y = document.getElementById('dash-year').value.trim() || '2569'; const b = document.getElementById('dash-search-branch').value.toLowerCase().trim();
+            document.getElementById('dash-label-month').innerText = m === "" ? "ทุกเดือน" : m; document.getElementById('dash-label-year').innerText = "ปี " + y; document.getElementById('chart-year-label').innerText = y;
+            dashFilteredData = dbData.filter(i => { const rm = String(i.monthYear||""); return (m==="" || rm.includes(m)) && (y==="" || rm.includes(y)) && String(i.branch||"").toLowerCase().includes(b); });
+            dashFilteredData.sort((a, b) => b.originalIndex - a.originalIndex);
+            document.getElementById('dash-total-count').innerText = dashFilteredData.length; dashCurrentPage = 1; renderDashTablePage(); renderChart(y);
+        }
+        function renderDashTablePage() {
+            const tbody = document.getElementById('dash-table-body'); const emptyState = document.getElementById('dash-empty'); const pagination = document.getElementById('dash-pagination-controls');
+            tbody.innerHTML = "";
+            if (dashFilteredData.length === 0) { emptyState.classList.remove('hidden'); pagination.classList.add('hidden'); return; }
+            emptyState.classList.add('hidden'); pagination.classList.remove('hidden');
+            const start = (dashCurrentPage - 1) * dashItemsPerPage; const end = start + dashItemsPerPage; const pageData = dashFilteredData.slice(start, end);
+            pageData.forEach(item => {
+                const tr = document.createElement('tr'); tr.className = "hover:bg-blue-50/40 border-b border-gray-50"; let dt = "-";
+                if(item.timestamp) { const d = new Date(item.timestamp); if(!isNaN(d.getTime())) { let y=d.getFullYear(); if(y<2500) y+=543; dt = `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${y} <span class="text-gray-400 text-[10px] block mt-0.5">${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')} น.</span>`; } else dt=String(item.timestamp).split('T')[0]; }
+                const meetBtn = item.fileMeet && item.fileMeet !== "#" ? `<a href="${item.fileMeet}" target="_blank" class="text-blue-600 bg-blue-50 px-2 py-1 rounded block mb-1 hover:bg-blue-100"><i class="ph ph-file-pdf"></i> คปอ.</a>` : `<span class="text-gray-300 text-[11px] block mb-1">ไม่มี คปอ.</span>`;
+                const patrolBtn = item.filePatrol && item.filePatrol !== "#" ? `<a href="${item.filePatrol}" target="_blank" class="text-emerald-600 bg-emerald-50 px-2 py-1 rounded block hover:bg-emerald-100"><i class="ph ph-file-pdf"></i> Patrol</a>` : `<span class="text-gray-300 text-[11px] block">ไม่มี Patrol</span>`;
+                tr.innerHTML = `<td class="px-6 py-4 font-semibold">${item.branch||'-'}</td><td class="px-6 py-4 text-blue-700">${item.monthYear||'-'}</td><td class="px-6 py-4 text-center text-xs">${dt}</td><td class="px-6 py-4 text-center text-[11px]">${meetBtn}${patrolBtn}</td>`; tbody.appendChild(tr);
+            });
+            document.getElementById('dash-page-start').innerText = start + 1; document.getElementById('dash-page-end').innerText = Math.min(end, dashFilteredData.length); document.getElementById('dash-page-total').innerText = dashFilteredData.length;
+            document.getElementById('dash-btn-prev').disabled = dashCurrentPage === 1; document.getElementById('dash-btn-next').disabled = end >= dashFilteredData.length;
+        }
+        function prevDashPage() { if (dashCurrentPage > 1) { dashCurrentPage--; renderDashTablePage(); } } function nextDashPage() { if (dashCurrentPage * dashItemsPerPage < dashFilteredData.length) { dashCurrentPage++; renderDashTablePage(); } }
+        function renderChart(year) {
+            const ctx = document.getElementById('monthlyChart'); if(!ctx) return;
+            const ms = ["มกราคม","กุมภาพันธ์","มีนาคม","เมษายน","พฤษภาคม","มิถุนายน","กรกฎาคม","สิงหาคม","กันยายน","ตุลาคม","พฤศจิกายน","ธันวาคม"]; const counts = new Array(12).fill(0);
+            dbData.forEach(item => { const rm = String(item.monthYear || ""); if (rm.includes(year)) { ms.forEach((m, i) => { if (rm.includes(m)) counts[i]++; }); } });
+            if (chartInstance) chartInstance.destroy();
+            chartInstance = new Chart(ctx.getContext('2d'), { type: 'bar', data: { labels: ["ม.ค.","ก.พ.","มี.ค.","เม.ย.","พ.ค.","มิ.ย.","ก.ค.","ส.ค.","ก.ย.","ต.ค.","พ.ย.","ธ.ค."], datasets: [{ label: `จำนวนสาขา`, data: counts, backgroundColor: '#3b82f6', borderRadius: 6, maxBarThickness: 30 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } }, x: { grid: { display: false } } } } });
+        }
+        function executeSearch() {
+            const b = document.getElementById('search-branch').value.toLowerCase().trim(); const m = document.getElementById('search-month').value.trim(); const y = document.getElementById('search-year').value.trim();
+            currentSearchData = dbData.filter(i => { const rm = String(i.monthYear||""); return String(i.branch||"").toLowerCase().includes(b) && (m==="" || rm.includes(m)) && (y==="" || rm.includes(y)); });
+            currentSearchData.sort((a, b) => b.originalIndex - a.originalIndex); currentPage = 1; renderTablePage();
+        }
+        function renderTablePage() {
+            const tbody = document.getElementById('search-table-body'); const empty = document.getElementById('search-empty'); const pagin = document.getElementById('pagination-controls'); tbody.innerHTML = "";
+            if (currentSearchData.length === 0) { empty.classList.remove('hidden'); pagin.classList.add('hidden'); return; }
+            empty.classList.add('hidden'); pagin.classList.remove('hidden');
+            const start = (currentPage - 1) * itemsPerPage; const end = start + itemsPerPage;
+            currentSearchData.slice(start, end).forEach(item => {
+                const tr = document.createElement('tr'); tr.className = "border-b border-gray-100 hover:bg-gray-50";
+                const meetBtn = item.fileMeet && item.fileMeet !== "#" ? `<a href="${item.fileMeet}" target="_blank" class="text-blue-600 hover:underline">คปอ.</a>` : `<span class="text-gray-300">คปอ.</span>`; const patrolBtn = item.filePatrol && item.filePatrol !== "#" ? `<a href="${item.filePatrol}" target="_blank" class="text-emerald-600 hover:underline">Patrol</a>` : `<span class="text-gray-300">Patrol</span>`;
+                tr.innerHTML = `<td class="px-5 py-3 font-semibold">${item.branch}</td><td class="px-5 py-3 text-sm">${item.name}</td><td class="px-5 py-3 text-blue-700">${item.monthYear}</td><td class="px-5 py-3 text-xs">ประชุม: ${formatDateTH(item.meetDate)}<br>เดิน: ${formatDateTH(item.patrolDate)}</td><td class="px-5 py-3 text-center text-[11px] font-medium space-y-1"><div class="bg-blue-50 p-1 rounded">${meetBtn}</div><div class="bg-emerald-50 p-1 rounded">${patrolBtn}</div></td><td class="px-5 py-3 text-center space-x-1 whitespace-nowrap"><button onclick="editData('${item.id}')" class="bg-amber-500 text-white px-3 py-1.5 rounded-lg text-[11px] shadow-sm hover:bg-amber-600">แก้ไข</button><button onclick="deleteData('${item.id}')" class="bg-red-500 text-white px-3 py-1.5 rounded-lg text-[11px] shadow-sm hover:bg-red-600">ลบ</button></td>`; tbody.appendChild(tr);
+            });
+            document.getElementById('page-start').innerText = start + 1; document.getElementById('page-end').innerText = Math.min(end, currentSearchData.length); document.getElementById('page-total').innerText = currentSearchData.length; document.getElementById('btn-prev').disabled = currentPage === 1; document.getElementById('btn-next').disabled = end >= currentSearchData.length;
+        }
+        function prevPage() { if (currentPage > 1) { currentPage--; renderTablePage(); } } function nextPage() { if (currentPage * itemsPerPage < currentSearchData.length) { currentPage++; renderTablePage(); } }
+        function editData(id) { /* Implemented in Manage section standard logic */ } async function deleteData(id) { /* Standard delete logic */ }
+
+        /* ========================================================= */
+        /* --- FORM (UI & TABLES) --- */
+        /* ========================================================= */
+        function initForm() {
+            for(let i=0; i<5; i++) addAttendee();
+            for(let i=0; i<2; i++) addAbsentAttendee();
+            for(let i=0; i<3; i++) addPatrolAttendee();
+            addDefect(); setupCanvas('creator-canvas'); setupCanvas('approver-canvas');
+            const d = new Date(); document.getElementById('meeting-date').valueAsDate = d; document.getElementById('patrol-date').valueAsDate = d; document.getElementById('meeting-year').value = d.getFullYear() + 543; document.getElementById('meeting-year-select').value = d.getFullYear() + 543;
+            const ms = ["มกราคม","กุมภาพันธ์","มีนาคม","เมษายน","พฤษภาคม","มิถุนายน","กรกฎาคม","สิงหาคม","กันยายน","ตุลาคม","พฤศจิกายน","ธันวาคม"]; document.getElementById('meeting-month-select').value = ms[d.getMonth()];
+            document.querySelectorAll('textarea').forEach(el => { el.addEventListener('input', function() { this.style.height = 'auto'; this.style.height = (this.scrollHeight) + 'px'; }); });
+            document.querySelectorAll('img').forEach(img => { if (!img.src || img.src === window.location.href) { img.src = "data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs="; } });
+        }
+
+        // Attendees (Present)
+        function addAttendee() {
+            attendeeCount++; const tbody = document.getElementById('attendees-body'); const tr = document.createElement('tr'); tr.id = `attendee-row-${attendeeCount}`; tr.className = 'page-break-avoid'; const opts = positions.map(p => `<option value="${p}">${p}</option>`).join('');
+            tr.innerHTML = `<td class="border border-gray-300 p-2 text-center">${attendeeCount}</td><td class="border border-gray-300 p-0 relative"><input type="text" class="attendee-name w-full h-full p-2 outline-none bg-transparent" placeholder="ระบุชื่อ-นามสกุล"></td><td class="border border-gray-300 p-0 relative"><div class="input-group"><select class="position-select w-full h-full p-2 outline-none bg-transparent appearance-none" onchange="if(this.value==='other'){ this.style.display='none'; this.nextElementSibling.style.display='block'; this.nextElementSibling.querySelector('input').focus(); }"><option value="" disabled selected>เลือกตำแหน่ง...</option>${opts}<option value="other">อื่นๆ (โปรดระบุ)...</option></select><div class="position-custom hidden w-full h-full" style="display: none;"><div class="relative w-full h-full flex items-center"><input type="text" class="w-full h-full p-2 pr-8 outline-none bg-blue-50" placeholder="พิมพ์ระบุตำแหน่ง..."><button onclick="const c = this.parentElement.parentElement; const s = c.previousElementSibling; const i = this.previousElementSibling; c.style.display='none'; s.style.display='block'; s.value=''; i.value='';" class="absolute right-2 text-gray-400 hover:text-red-500"><i class="ph ph-x-circle text-lg"></i></button></div></div></div></td><td class="border border-gray-300 p-2 text-center no-print"><button onclick="removeAttendee(${attendeeCount})" class="text-red-500 hover:text-red-700 bg-red-50 p-1.5 rounded-full"><i class="ph ph-trash"></i></button></td>`;
+            tbody.appendChild(tr); updateAttendeeNumbers();
+        }
+        function removeAttendee(id) { const row = document.getElementById(`attendee-row-${id}`); if(row) { row.remove(); updateAttendeeNumbers(); } } function updateAttendeeNumbers() { const rows = document.getElementById('attendees-body').children; attendeeCount = rows.length; for(let i=0; i<rows.length; i++) { rows[i].children[0].textContent = i+1; rows[i].id = `attendee-row-${i+1}`; rows[i].querySelector('button').setAttribute('onclick', `removeAttendee(${i+1})`); } }
+
+        // Attendees (Absent)
+        function addAbsentAttendee() {
+            absentAttendeeCount++; const tbody = document.getElementById('absent-attendees-body'); const tr = document.createElement('tr'); tr.id = `absent-attendee-row-${absentAttendeeCount}`; tr.className = 'page-break-avoid'; const opts = positions.map(p => `<option value="${p}">${p}</option>`).join('');
+            tr.innerHTML = `<td class="border border-gray-300 p-2 text-center">${absentAttendeeCount}</td><td class="border border-gray-300 p-0 relative"><input type="text" class="absent-attendee-name w-full h-full p-2 outline-none bg-transparent" placeholder="ระบุชื่อ-นามสกุล"></td><td class="border border-gray-300 p-0 relative"><div class="input-group"><select class="absent-position-select w-full h-full p-2 outline-none bg-transparent appearance-none" onchange="if(this.value==='other'){ this.style.display='none'; this.nextElementSibling.style.display='block'; this.nextElementSibling.querySelector('input').focus(); }"><option value="" disabled selected>เลือกตำแหน่ง/สาเหตุ...</option>${opts}<option value="other">อื่นๆ (โปรดระบุ)...</option></select><div class="absent-position-custom hidden w-full h-full" style="display: none;"><div class="relative w-full h-full flex items-center"><input type="text" class="w-full h-full p-2 pr-8 outline-none bg-orange-50" placeholder="พิมพ์ระบุตำแหน่ง/สาเหตุ..."><button onclick="const c = this.parentElement.parentElement; const s = c.previousElementSibling; const i = this.previousElementSibling; c.style.display='none'; s.style.display='block'; s.value=''; i.value='';" class="absolute right-2 text-gray-400 hover:text-red-500"><i class="ph ph-x-circle text-lg"></i></button></div></div></div></td><td class="border border-gray-300 p-2 text-center no-print"><button onclick="removeAbsentAttendee(${absentAttendeeCount})" class="text-red-500 hover:text-red-700 bg-red-50 p-1.5 rounded-full"><i class="ph ph-trash"></i></button></td>`;
+            tbody.appendChild(tr); updateAbsentAttendeeNumbers();
+        }
+        function removeAbsentAttendee(id) { const row = document.getElementById(`absent-attendee-row-${id}`); if(row) { row.remove(); updateAbsentAttendeeNumbers(); } } function updateAbsentAttendeeNumbers() { const rows = document.getElementById('absent-attendees-body').children; absentAttendeeCount = rows.length; for(let i=0; i<rows.length; i++) { rows[i].children[0].textContent = i+1; rows[i].id = `absent-attendee-row-${i+1}`; rows[i].querySelector('button').setAttribute('onclick', `removeAbsentAttendee(${i+1})`); } }
+
+        // Patrol Attendees
+        function addPatrolAttendee() {
+            patrolAttendeeCount++; const tbody = document.getElementById('patrol-attendees-body'); const tr = document.createElement('tr'); tr.id = `patrol-attendee-row-${patrolAttendeeCount}`; tr.className = 'page-break-avoid';
+            tr.innerHTML = `<td class="border border-gray-300 p-2 text-center">${patrolAttendeeCount}</td><td class="border border-gray-300 p-0 relative"><div class="input-group relative w-full h-full flex items-center"><select class="patrol-name-select w-full h-full p-2 outline-none bg-transparent appearance-none cursor-pointer" onfocus="populateMeetingAttendees(this)" onchange="handlePatrolNameSelect(this)"><option value="" disabled selected>เลือกจากผู้เข้าประชุม...</option><option value="custom" class="font-bold text-blue-600">+ ระบุชื่อเอง</option></select><div class="absolute inset-y-0 right-0 flex items-center pr-2 pointer-events-none select-arrow"><i class="ph ph-caret-down text-gray-400"></i></div><input type="text" class="patrol-attendee-name hidden absolute inset-0 w-full h-full p-2 pr-8 outline-none bg-blue-50" placeholder="ระบุชื่อ-นามสกุล"><button onclick="resetPatrolName(this)" class="clear-btn hidden absolute right-2 text-gray-400 hover:text-red-500 z-10"><i class="ph ph-x-circle text-lg"></i></button></div></td><td class="border border-gray-300 p-0 relative"><input type="text" class="patrol-attendee-dept w-full h-full p-2 outline-none bg-transparent" placeholder="ระบุหน่วยงาน/ตำแหน่ง"></td><td class="border border-gray-300 p-2 text-center no-print"><button onclick="removePatrolAttendee(${patrolAttendeeCount})" class="text-red-500 hover:text-red-700 bg-red-50 p-1.5 rounded-full"><i class="ph ph-trash"></i></button></td>`;
+            tbody.appendChild(tr); updatePatrolAttendeeNumbers();
+        }
+        function removePatrolAttendee(id) { const r = document.getElementById(`patrol-attendee-row-${id}`); if(r){ r.remove(); updatePatrolAttendeeNumbers(); } } function updatePatrolAttendeeNumbers() { const rows = document.getElementById('patrol-attendees-body').children; patrolAttendeeCount = rows.length; for(let i=0; i<rows.length; i++){ rows[i].children[0].textContent=i+1; rows[i].id=`patrol-attendee-row-${i+1}`; rows[i].querySelector('button').setAttribute('onclick', `removePatrolAttendee(${i+1})`); } }
+        window.populateMeetingAttendees = function(select) { const val = select.value; select.innerHTML = `<option value="" disabled>เลือกจากผู้เข้าประชุม...</option><option value="custom" class="font-bold text-blue-600">+ ระบุชื่อเอง</option>`; let found = false; document.querySelectorAll('#attendees-body tr').forEach(row => { const n = row.querySelector('.attendee-name')?.value.trim(); let p = row.querySelector('.position-select').value; if (p==='other') p = row.querySelector('.position-custom input').value; if (n) { found=true; const opt=document.createElement('option'); opt.value=n; opt.textContent=n; opt.dataset.position=p; select.appendChild(opt); } }); if(!found && val==="") select.options[0].text="ไม่มีรายชื่อ"; if(val && val!=='custom'){ if(Array.from(select.options).some(o=>o.value===val)) select.value=val; else { select.add(new Option(val,val)); select.value=val; } } else if(!val) select.value=""; };
+        window.handlePatrolNameSelect = function(select) { const c = select.parentElement; const i = c.querySelector('input'); const b = c.querySelector('button'); const a = c.querySelector('.select-arrow'); const dept = c.closest('tr').querySelector('.patrol-attendee-dept'); if(select.value==='custom'){ select.classList.add('hidden'); a.classList.add('hidden'); i.classList.remove('hidden'); b.classList.remove('hidden'); i.focus(); if(!dept.value) dept.value=''; } else { dept.value = select.options[select.selectedIndex].dataset.position || ''; i.value = select.value; } };
+        window.resetPatrolName = function(btn) { const c = btn.parentElement; const s = c.querySelector('select'); const i = c.querySelector('input'); const a = c.querySelector('.select-arrow'); i.classList.add('hidden'); btn.classList.add('hidden'); s.classList.remove('hidden'); a.classList.remove('hidden'); s.value=""; i.value=""; c.closest('tr').querySelector('.patrol-attendee-dept').value=''; };
+        window.copyAllMeetingAttendees = function() { const rows = document.querySelectorAll('#attendees-body tr'); const names = []; rows.forEach(r => { const n = r.querySelector('.attendee-name')?.value.trim(); if(n){ let p = r.querySelector('.position-select').value; if(p==='other') p = r.querySelector('.position-custom input').value; names.push({n,p}); } }); if(names.length===0){ alert("ไม่พบรายชื่อผู้เข้าร่วมประชุม"); return; } document.querySelectorAll('#patrol-attendees-body tr').forEach(r => { const s = r.querySelector('select'), i = r.querySelector('input'); if(s&&s.classList.contains('hidden') ? !i.value : (!s.value || s.value==='custom')) r.remove(); }); names.forEach(d => { addPatrolAttendee(); const last = document.getElementById(`patrol-attendee-row-${patrolAttendeeCount}`); const s = last.querySelector('select'), i = last.querySelector('input'); s.add(new Option(d.n, d.n, true, true)); s.options[s.options.length-1].dataset.position = d.p; i.value = d.n; last.querySelector('.patrol-attendee-dept').value = d.p; }); };
+
+        // Defects & Images
+        function addDefect() {
+            defectCount++; const c = document.getElementById('defects-container'); const div = document.createElement('div'); div.id = `defect-item-${defectCount}`; div.className = 'defect-entry border border-gray-300 rounded-lg p-4 bg-white relative shadow-sm page-break-avoid';
+            div.innerHTML = `<div class="absolute top-2 right-2 no-print"><button onclick="removeDefect(${defectCount})" class="text-red-500 hover:text-red-700 bg-red-50 px-2 py-1 rounded text-xs flex items-center font-sans"><i class="ph ph-trash mr-1"></i>ลบ</button></div><h4 class="font-bold mb-3 border-b pb-2">รายการที่ <span class="defect-number">${defectCount}</span></h4><div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4"><div><label class="block text-sm font-bold text-gray-600 mb-1">สถานที่พบ</label><input type="text" class="w-full border-b border-gray-300 focus:border-blue-500 py-1 defect-loc-input" placeholder="ระบุสถานที่"></div><div><label class="block text-sm font-bold text-gray-600 mb-1">ผู้รับผิดชอบ</label><input type="text" class="w-full border-b border-gray-300 focus:border-blue-500 py-1 defect-resp-input" placeholder="ระบุชื่อ/หน่วยงาน"></div><div><label class="block text-sm font-bold text-gray-600 mb-1">สถานะ</label><select class="w-full border-b border-gray-300 focus:border-blue-500 py-1 defect-status-select"><option>รอดำเนินการ</option><option>กำลังดำเนินการ</option><option>แก้ไขแล้ว</option></select></div></div><div class="mb-4"><label class="block text-sm font-bold text-gray-600 mb-1">รายละเอียดข้อบกพร่อง</label><textarea class="w-full min-h-[60px] p-2 border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 defect-detail-input" placeholder="อธิบาย..."></textarea></div><div class="grid grid-cols-1 md:grid-cols-2 gap-4"><div class="border rounded p-2 bg-gray-50 text-center"><label class="block text-sm font-bold mb-2">รูปก่อนแก้ไข</label><input type="file" accept="image/*" class="no-print block w-full text-xs file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:bg-blue-50 mb-2" onchange="previewImage(this, 'before-${defectCount}')"><div class="min-h-[120px] flex items-center justify-center border-2 border-dashed rounded bg-white overflow-hidden"><img id="before-${defectCount}" src="data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=" class="max-h-[200px] object-contain hidden"><span class="text-gray-400 text-xs no-print img-placeholder">ยังไม่มีรูปภาพ</span></div></div><div class="border rounded p-2 bg-gray-50 text-center"><label class="block text-sm font-bold mb-2">รูปหลังแก้ไข</label><input type="file" accept="image/*" class="no-print block w-full text-xs file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:bg-green-50 mb-2" onchange="previewImage(this, 'after-${defectCount}')"><div class="min-h-[120px] flex items-center justify-center border-2 border-dashed rounded bg-white overflow-hidden"><img id="after-${defectCount}" src="data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=" class="max-h-[200px] object-contain hidden"><span class="text-gray-400 text-xs no-print img-placeholder">ยังไม่มีรูปภาพ</span></div></div></div>`;
+            c.appendChild(div); updateDefectNumbers(); div.querySelector('textarea').addEventListener('input', function() { this.style.height='auto'; this.style.height=(this.scrollHeight)+'px'; });
+        }
+        function removeDefect(id) { const item = document.getElementById(`defect-item-${id}`); if(item){ item.remove(); updateDefectNumbers(); } } function updateDefectNumbers() { const items = document.querySelectorAll('.defect-entry'); defectCount = items.length; items.forEach((item, index) => { item.id = `defect-item-${index + 1}`; item.querySelector('.defect-number').textContent = index + 1; const btn = item.querySelector('button'); if(btn) btn.setAttribute('onclick', `removeDefect(${index + 1})`); }); }
+        function previewImage(input, previewId) { const p = document.getElementById(previewId); const h = p.nextElementSibling; if (input.files && input.files[0]) { const reader = new FileReader(); reader.onload = e => { p.src = e.target.result; p.classList.remove('hidden'); if(h) h.classList.add('hidden'); }; reader.readAsDataURL(input.files[0]); } else { p.src = "data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs="; p.classList.add('hidden'); if(h) h.classList.remove('hidden'); } }
+        window.previewAgendaImage = function(input, previewId) { const p = document.getElementById(previewId); if (input.files && input.files[0]) { const reader = new FileReader(); reader.onload = e => { p.src = e.target.result; p.classList.remove('hidden'); }; reader.readAsDataURL(input.files[0]); } else { p.src = "data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs="; p.classList.add('hidden'); } };
+
+        // Signatures Canvas
+        function setupCanvas(id) {
+            const c = document.getElementById(id); const ctx = c.getContext('2d'); drawingContexts[id] = ctx; isDrawing[id] = false; ctx.strokeStyle = '#000000'; ctx.lineWidth = 2; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+            const getPos = (e) => { const rect = c.getBoundingClientRect(); return { x: (e.clientX - rect.left) * (c.width / rect.width), y: (e.clientY - rect.top) * (c.height / rect.height) }; };
+            const start = (e) => { isDrawing[id] = true; const pos = getPos(e); ctx.beginPath(); ctx.moveTo(pos.x, pos.y); }; const draw = (e) => { if(!isDrawing[id]) return; const pos = getPos(e); ctx.lineTo(pos.x, pos.y); ctx.stroke(); }; const stop = () => { isDrawing[id] = false; };
+            c.addEventListener('mousedown', start); c.addEventListener('mousemove', draw); c.addEventListener('mouseup', stop); c.addEventListener('mouseout', stop); c.addEventListener('touchstart', e=>{ e.preventDefault(); start(e.touches[0]); }, {passive:false}); c.addEventListener('touchmove', e=>{ e.preventDefault(); draw(e.touches[0]); }, {passive:false}); c.addEventListener('touchend', stop);
+        }
+        window.clearCanvas = function(id) { const c = document.getElementById(id); const ctx = drawingContexts[id]; if(ctx&&c) ctx.clearRect(0,0,c.width,c.height); const img = document.getElementById(id.replace('-canvas','-img')); if(img){ img.style.display='none'; img.src='data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs='; } };
+        function isCanvasEmpty(id) { const c = document.getElementById(id); const ctx = c.getContext('2d'); return !new Uint32Array(ctx.getImageData(0,0,c.width,c.height).data.buffer).some(color=>color!==0); }
+
+        /* ========================================================= */
+        /* --- DRAFT SYSTEM (LOCAL STORAGE) --- */
+        /* ========================================================= */
+        window.saveDraftToStorage = function() {
+            showLoading("กำลังบันทึกแบบร่าง...");
+            try {
+                const state = {
+                    branch: document.getElementById('branch-select').value || '', meetingMonthSelect: document.getElementById('meeting-month-select').value || '', meetingYearSelect: document.getElementById('meeting-year-select').value || '',
+                    meetingNo: document.getElementById('meeting-no').value || '', meetingYear: document.getElementById('meeting-year').value || '', meetingDate: document.getElementById('meeting-date').value || '', meetingTime: document.getElementById('meeting-time').value || '',
+                    meetingLocation: document.getElementById('meeting-location').value || '', closeTime: document.getElementById('meeting-close-time').value || '', creatorName: document.getElementById('creator-name').value || '', creatorPos: document.getElementById('creator-position').value || '', approverName: document.getElementById('approver-name').value || '', approverPos: document.getElementById('approver-position').value || '',
+                    agendas: {}, agendaImages: {}, attendees: [], absentAttendees: [], defects: [], patrolAttendees: [], patrolDate: document.getElementById('patrol-date').value || '',
+                    signatures: { creator: isCanvasEmpty('creator-canvas') ? null : document.getElementById('creator-canvas').toDataURL(), approver: isCanvasEmpty('approver-canvas') ? null : document.getElementById('approver-canvas').toDataURL() }
+                };
+                for(let i=1; i<=5; i++) { state.agendas[`agenda${i}`] = document.getElementById(`agenda-${i}`).value || ''; const img = document.getElementById(`img-agenda-${i}`); if (img && !img.src.includes('data:image/gif')) state.agendaImages[`agenda${i}`] = img.src; }
+                document.querySelectorAll('#attendees-body tr').forEach(row => { const name = row.querySelector('.attendee-name')?.value || ''; const select = row.querySelector('.position-select')?.value || ''; const custom = row.querySelector('.position-custom input')?.value || ''; state.attendees.push({ name, select, custom }); });
+                document.querySelectorAll('#absent-attendees-body tr').forEach(row => { const name = row.querySelector('.absent-attendee-name')?.value || ''; const select = row.querySelector('.absent-position-select')?.value || ''; const custom = row.querySelector('.absent-position-custom input')?.value || ''; state.absentAttendees.push({ name, select, custom }); });
+                document.querySelectorAll('#patrol-attendees-body tr').forEach(row => { const select = row.querySelector('.patrol-name-select')?.value || ''; const customName = row.querySelector('.patrol-attendee-name')?.value || ''; const dept = row.querySelector('.patrol-attendee-dept')?.value || ''; state.patrolAttendees.push({ select, customName, dept }); });
+                document.querySelectorAll('.defect-entry').forEach(item => { const textInputs = item.querySelectorAll('input[type="text"]'); const loc = textInputs[0]?.value || ''; const resp = textInputs[1]?.value || ''; const status = item.querySelector('select')?.value || ''; const detail = item.querySelector('textarea')?.value || ''; const images = item.querySelectorAll('img'); state.defects.push({ loc, resp, status, detail, beforeImg: (images[0] && !images[0].src.includes('data:image/gif')) ? images[0].src : null, afterImg: (images[1] && !images[1].src.includes('data:image/gif')) ? images[1].src : null }); });
+                
+                localStorage.setItem('kpo_draft', JSON.stringify(state)); hideLoading(); showNotif('success', 'บันทึกสำเร็จ', 'บันทึกแบบร่างลงในอุปกรณ์นี้เรียบร้อยแล้ว (คุณสามารถปิดหน้าเว็บ แล้วกลับมากู้คืนได้ทีหลัง)');
+            } catch (err) { hideLoading(); showNotif('error', 'ผิดพลาด', 'ไม่สามารถบันทึกแบบร่างได้'); }
+        };
+
+        window.loadDraftFromStorage = function() {
+            const draftStr = localStorage.getItem('kpo_draft');
+            if (!draftStr) { showNotif('error', 'ไม่พบแบบร่าง', 'ยังไม่มีข้อมูลแบบร่างที่บันทึกไว้ในเครื่องนี้ครับ'); return; }
+            if (!confirm('การกู้คืนแบบร่างจะเขียนทับข้อมูลที่พิมพ์อยู่ตอนนี้ คุณต้องการดำเนินการต่อหรือไม่?')) return;
+            
+            showLoading("กำลังโหลดแบบร่าง...");
+            try {
+                const state = JSON.parse(draftStr);
+                try {
+                    const b = document.getElementById('branch-select'); if (b && state.branch) { if (!Array.from(b.options).some(o => o.value === state.branch)) b.add(new Option(state.branch, state.branch)); b.value = state.branch; }
+                    const m = document.getElementById('meeting-month-select'); if (m && state.meetingMonthSelect) m.value = state.meetingMonthSelect;
+                    const y = document.getElementById('meeting-year-select'); if (y && state.meetingYearSelect) y.value = state.meetingYearSelect;
+                } catch(e) {}
+                
+                const tf = { 'meetingNo': 'meeting-no', 'meetingYear': 'meeting-year', 'meetingDate': 'meeting-date', 'meetingTime': 'meeting-time', 'meetingLocation': 'meeting-location', 'closeTime': 'meeting-close-time', 'creatorName': 'creator-name', 'creatorPos': 'creator-position', 'approverName': 'approver-name', 'approverPos': 'approver-position', 'patrolDate': 'patrol-date' };
+                for (const [key, id] of Object.entries(tf)) { try { if (state[key] !== undefined) { const el = document.getElementById(id); if (el) { el.value = state[key] || ''; el.dispatchEvent(new Event('input', { bubbles: true })); } } } catch(e) {} }
+                
+                for(let i=1; i<=5; i++) { try { if(state.agendas && state.agendas[`agenda${i}`] !== undefined) { const ta = document.getElementById(`agenda-${i}`); if (ta) ta.value = state.agendas[`agenda${i}`] || ''; } if(state.agendaImages && state.agendaImages[`agenda${i}`]) { const img = document.getElementById(`img-agenda-${i}`); if (img) { img.src = state.agendaImages[`agenda${i}`]; img.classList.remove('hidden'); } } } catch(e) {} }
+                
+                try {
+                    if (state.attendees && Array.isArray(state.attendees)) { document.getElementById('attendees-body').innerHTML = ''; attendeeCount = 0; state.attendees.forEach(att => { if (!att.name && !att.select && !att.custom) return; addAttendee(); const row = document.getElementById(`attendee-row-${attendeeCount}`); if (row) { const nameInput = row.querySelector('.attendee-name'); if (nameInput && att.name) nameInput.value = att.name; const select = row.querySelector('.position-select'); if (select && att.select) { if(!Array.from(select.options).some(o => o.value === att.select) && att.select !== 'other' && att.select !== "") select.add(new Option(att.select, att.select)); if(att.select !== "") select.value = att.select; if (att.select === 'other' || att.custom) { select.style.display = 'none'; const customDiv = row.querySelector('.position-custom'); if (customDiv) { customDiv.style.display = 'block'; customDiv.querySelector('input').value = att.custom || ''; } } } } }); if(attendeeCount === 0) for(let i=0; i<5; i++) addAttendee(); }
+                } catch(e) {}
+                
+                try {
+                    if (state.absentAttendees && Array.isArray(state.absentAttendees)) { document.getElementById('absent-attendees-body').innerHTML = ''; absentAttendeeCount = 0; state.absentAttendees.forEach(att => { if (!att.name && !att.select && !att.custom) return; addAbsentAttendee(); const row = document.getElementById(`absent-attendee-row-${absentAttendeeCount}`); if (row) { const nameInput = row.querySelector('.absent-attendee-name'); if (nameInput && att.name) nameInput.value = att.name; const select = row.querySelector('.absent-position-select'); if (select && att.select) { if(!Array.from(select.options).some(o => o.value === att.select) && att.select !== 'other' && att.select !== "") select.add(new Option(att.select, att.select)); if(att.select !== "") select.value = att.select; if (att.select === 'other' || att.custom) { select.style.display = 'none'; const customDiv = row.querySelector('.absent-position-custom'); if (customDiv) { customDiv.style.display = 'block'; customDiv.querySelector('input').value = att.custom || ''; } } } } }); if(absentAttendeeCount === 0) for(let i=0; i<2; i++) addAbsentAttendee(); }
+                } catch(e) {}
+
+                try {
+                    if (state.patrolAttendees && Array.isArray(state.patrolAttendees)) { document.getElementById('patrol-attendees-body').innerHTML = ''; patrolAttendeeCount = 0; state.patrolAttendees.forEach(att => { if (!att.select && !att.customName && !att.dept) return; addPatrolAttendee(); const row = document.getElementById(`patrol-attendee-row-${patrolAttendeeCount}`); if (row) { const select = row.querySelector('.patrol-name-select'); if (select) { if (att.select === 'custom' || (!att.select && att.customName)) { select.value = 'custom'; if (typeof window.handlePatrolNameSelect === 'function') window.handlePatrolNameSelect(select); const customInput = row.querySelector('.patrol-attendee-name'); if (customInput && att.customName) customInput.value = att.customName; } else if (att.select && att.select !== "") { if(!Array.from(select.options).some(o => o.value === att.select)) select.add(new Option(att.select, att.select)); select.value = att.select; } } const deptInput = row.querySelector('.patrol-attendee-dept'); if (deptInput && att.dept) deptInput.value = att.dept; } }); if(patrolAttendeeCount === 0) for(let i=0; i<3; i++) addPatrolAttendee(); }
+                } catch(e) {}
+
+                try {
+                    if (state.defects && Array.isArray(state.defects)) { document.getElementById('defects-container').innerHTML = ''; defectCount = 0; state.defects.forEach(def => { if(!def.loc && !def.resp && !def.detail && (!def.beforeImg || def.beforeImg.includes('data:image/gif')) && (!def.afterImg || def.afterImg.includes('data:image/gif'))) return; addDefect(); const row = document.getElementById(`defect-item-${defectCount}`); if (row) { const textInputs = row.querySelectorAll('input[type="text"]'); if (textInputs.length >= 2) { if(def.loc) textInputs[0].value = def.loc; if(def.resp) textInputs[1].value = def.resp; } const statusSelect = row.querySelector('select'); if (statusSelect && def.status) statusSelect.value = def.status; const ta = row.querySelector('textarea'); if (ta && def.detail) { ta.value = def.detail; ta.style.height='auto'; ta.style.height=ta.scrollHeight+'px'; } const images = row.querySelectorAll('img'); if (images.length >= 2) { if(def.beforeImg && !def.beforeImg.includes('data:image/gif')) { images[0].src = def.beforeImg; images[0].classList.remove('hidden'); const p = images[0].parentElement.querySelector('.img-placeholder'); if (p) p.classList.add('hidden'); } if(def.afterImg && !def.afterImg.includes('data:image/gif')) { images[1].src = def.afterImg; images[1].classList.remove('hidden'); const p = images[1].parentElement.querySelector('.img-placeholder'); if (p) p.classList.add('hidden'); } } } }); if(defectCount === 0) addDefect(); }
+                } catch(e) {}
+
+                try { if(state.signatures) { if(state.signatures.creator && !state.signatures.creator.includes('data:image/gif')) { const imgC = new Image(); imgC.onload = () => { if (drawingContexts['creator-canvas']) drawingContexts['creator-canvas'].drawImage(imgC, 0, 0); }; imgC.src = state.signatures.creator; } if(state.signatures.approver && !state.signatures.approver.includes('data:image/gif')) { const imgA = new Image(); imgA.onload = () => { if (drawingContexts['approver-canvas']) drawingContexts['approver-canvas'].drawImage(imgA, 0, 0); }; imgA.src = state.signatures.approver; } } } catch(e) {}
+                
+                hideLoading(); showNotif('success', 'สำเร็จ', 'กู้คืนแบบร่างล่าสุดเรียบร้อยแล้ว');
+            } catch(err) { hideLoading(); showNotif('error', 'ผิดพลาด', 'ไฟล์แบบร่างเสียหายหรือไม่สามารถโหลดได้'); }
+        };
+
+        /* ========================================================= */
+        /* --- PDF GENERATION & UPLOAD (jsPDF + html2canvas v1.4.1) --- */
+        /* ========================================================= */
+        function prepareForOutput() {
+            document.body.classList.add('pdf-mode');
+            const container = document.getElementById('report-container');
+            const formElements = container.querySelectorAll('input:not([type="file"]), select, textarea');
+            formElements.forEach(el => {
+                if (el.offsetWidth === 0 && el.offsetHeight === 0) return;
+                const replacement = document.createElement('span');
+                replacement.className = 'pdf-text-replace ' + (el.className.includes('text-center') ? 'text-center block w-full' : '');
+                let textValue = el.value || '';
+                if (el.tagName === 'SELECT') { if (el.selectedIndex >= 0 && !el.options[el.selectedIndex].disabled) textValue = el.options[el.selectedIndex].text; else textValue = ''; }
+                if (el.tagName === 'TEXTAREA') { replacement.style.display = 'block'; replacement.style.width = '100%'; }
+                else if(el.tagName === 'INPUT' && (el.type === 'time' || el.type === 'date')) { if(el.type === 'date' && textValue) { const d = new Date(textValue); if(!isNaN(d)) { let y = d.getFullYear(); if (y < 2500) y += 543; textValue = `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${y}`; } } }
+                replacement.innerText = textValue; el.dataset.origDisplay = window.getComputedStyle(el).display; el.style.display = 'none'; el.parentNode.insertBefore(replacement, el.nextSibling);
+            });
+            ['creator','approver'].forEach(p => { 
+                const cid = p+'-canvas', iid = p+'-img'; const c = document.getElementById(cid), img = document.getElementById(iid); 
+                if(!isCanvasEmpty(cid)){ img.src = c.toDataURL(); img.style.display = 'block'; c.parentElement.style.display = 'none'; } else { img.style.display = 'none'; }
+            });
+        }
+
+        window.onafterprint = function() { 
+            document.body.classList.remove('pdf-mode');
+            document.querySelectorAll('.pdf-text-replace').forEach(el => el.remove());
+            document.querySelectorAll('input:not([type="file"]), select, textarea').forEach(el => { if (el.dataset.origDisplay !== undefined) el.style.display = el.dataset.origDisplay; });
+            ['creator','approver'].forEach(p => { const c = document.getElementById(p+'-canvas'); const img = document.getElementById(p+'-img'); if(c) c.parentElement.style.display = 'block'; if(img) img.style.display = 'none'; }); 
+        };
+
+        async function saveFormDataToGAS() {
+            try {
+                const attendees = []; document.querySelectorAll('#attendees-body tr').forEach(row => { const name = row.querySelector('.attendee-name')?.value || ''; let pos = row.querySelector('.position-select')?.value || ''; if (pos === 'other') pos = row.querySelector('.position-custom input')?.value || ''; if(name) attendees.push(`${name} (${pos})`); });
+                const absentAttendees = []; document.querySelectorAll('#absent-attendees-body tr').forEach(row => { const name = row.querySelector('.absent-attendee-name')?.value || ''; let pos = row.querySelector('.absent-position-select')?.value || ''; if (pos === 'other') pos = row.querySelector('.absent-position-custom input')?.value || ''; if(name) absentAttendees.push(`${name} (${pos})`); });
+                const defects = []; document.querySelectorAll('.defect-entry').forEach(item => { const textInputs = item.querySelectorAll('input[type="text"]'); const loc = textInputs[0]?.value || ''; const resp = textInputs[1]?.value || ''; const status = item.querySelector('select')?.value || ''; const detail = item.querySelector('textarea')?.value || ''; if(loc || detail) defects.push(`[สถานที่: ${loc} | ผู้รับผิดชอบ: ${resp} | สถานะ: ${status} | ปัญหา: ${detail}]`); });
+                
+                const data = {
+                    timestamp: new Date().toLocaleString('th-TH'), branch: document.getElementById('branch-select').value || '-', meetingNo: document.getElementById('meeting-no').value || '-', meetingYear: document.getElementById('meeting-year').value || '-', meetingDate: document.getElementById('meeting-date').value || '-', meetingTime: document.getElementById('meeting-time').value || '-', location: document.getElementById('meeting-location').value || '-',
+                    attendees: attendees.join(', '), absentAttendees: absentAttendees.join(', '), agenda1: document.getElementById('agenda-1').value || '-', agenda2: document.getElementById('agenda-2').value || '-', agenda3: document.getElementById('agenda-3').value || '-', agenda4: document.getElementById('agenda-4').value || '-', agenda5: document.getElementById('agenda-5').value || '-', patrolDate: document.getElementById('patrol-date').value || '-', defects: defects.join(' \n ')
+                };
+                const params = new URLSearchParams(); params.append('action', 'saveRawForm'); params.append('payload', JSON.stringify(data));
+                fetch(GAS_URL, { method: 'POST', body: params }).catch(e => console.warn("Background save error:", e));
+            } catch (e) { console.error("Error saving form data", e); }
+        }
+
+        window.generateAndSavePDF = async function() {
+            if (!document.getElementById('branch-select').value) { showNotif('error', 'ข้อผิดพลาด', 'กรุณาเลือกสาขาด้านบนให้เรียบร้อยก่อนสร้าง PDF ครับ'); return; }
+            const btn = document.getElementById('btn-pdf'); const origText = btn.innerHTML;
+            btn.innerHTML = '<i class="ph ph-spinner animate-spin text-lg mr-2"></i> กำลังสร้างและบันทึก...'; btn.disabled = true;
+            showLoading("กำลังสร้างและบันทึกเอกสาร PDF...");
+            
+            try {
+                prepareForOutput(); saveFormDataToGAS();
+                const element = document.getElementById('report-container');
+                const no = document.getElementById('meeting-no').value || 'X'; const yr = document.getElementById('meeting-year').value || 'YYYY';
+                const currentPdfFilename = `รายงานคปอ_${no}_${yr}.pdf`;
+
+                await document.fonts.ready; // รอโหลดฟอนต์ภาษาไทยเสร็จสิ้น 100%
+
+                const canvas = await html2canvas(element, {
+                    scale: 2, useCORS: true, logging: false,
+                    letterRendering: false, // บังคับไม่ให้ตัดคำทีละตัว ป้องกันสระภาษาไทยกระโดด 100%
+                    windowWidth: 800, x: 0, y: 0, scrollX: 0, scrollY: 0
+                });
+
+                const imgData = canvas.toDataURL('image/jpeg', 1.0);
+                const { jsPDF } = window.jspdf; const pdf = new jsPDF('p', 'mm', 'a4');
+                const pdfWidth = pdf.internal.pageSize.getWidth(); const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+                
+                pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
+                pdf.save(currentPdfFilename); // โหลดไฟล์ลงเครื่อง
+                
+                const pdfDataUri = pdf.output('datauristring'); const base64Data = pdfDataUri.split(',')[1];
+                const branchValue = document.getElementById('branch-select').value;
+                const meetDateVal = document.getElementById('meeting-date').value; const patrolDateVal = document.getElementById('patrol-date').value;
+                const manualMonth = document.getElementById('meeting-month-select').value; const manualYear = document.getElementById('meeting-year-select').value;
+                
+                let finalMonthYear = "";
+                if (manualMonth && manualYear) { finalMonthYear = `เดือน${manualMonth} ${manualYear}`; } else { const d = new Date(meetDateVal || new Date()); const ms = ["มกราคม","กุมภาพันธ์","มีนาคม","เมษายน","พฤษภาคม","มิถุนายน","กรกฎาคม","สิงหาคม","กันยายน","ตุลาคม","พฤศจิกายน","ธันวาคม"]; let y = d.getFullYear(); if (y < 2500) y += 543; finalMonthYear = `เดือน${ms[d.getMonth()]} ${y}`; }
+
+                const submitPayload = {
+                    id: 'ID_AUTO_' + new Date().getTime(), timestamp: new Date().toLocaleString('th-TH'), name: "สร้างผ่านฟอร์มระบบ", branch: branchValue, meetDate: meetDateVal || '-', patrolDate: patrolDateVal || '-', monthYear: finalMonthYear, fileMeet: { mimeType: "application/pdf", data: base64Data }, filePatrol: { data: "" }
+                };
+                const submitParams = new URLSearchParams(); submitParams.append('action', 'submit'); submitParams.append('payload', JSON.stringify(submitPayload));
+                
+                fetch(GAS_URL, { method: 'POST', body: submitParams }).then(res => res.json()).then(() => fetchDataFromGAS()).catch(e => console.warn("Upload error:", e));
+                showNotif('success', 'สำเร็จ', 'สร้างเอกสาร PDF และส่งเข้าระบบเรียบร้อยแล้ว');
+            } catch (error) {
+                console.error("PDF generation error:", error); showNotif('error', 'ผิดพลาด', 'เกิดข้อผิดพลาดในการสร้าง PDF');
+            } finally {
+                if (typeof window.onafterprint === 'function') window.onafterprint();
+                btn.innerHTML = origText; btn.disabled = false; hideLoading();
+            }
+        };
+
+        // Standard Submit File form function
+        async function handleFormSubmit(event) {
+            event.preventDefault(); const id = document.getElementById('form-id').value || 'ID_' + new Date().getTime(); const isUpdate = document.getElementById('form-id').value !== "";
+            const fileMeet = document.getElementById('input-fileMeet'); const filePatrol = document.getElementById('input-filePatrol'); const branchSelect = document.getElementById('input-branch');
+            if (!isUpdate) { if(fileMeet.files.length === 0 || filePatrol.files.length === 0){ showNotif('error', 'แจ้งเตือน', "กรุณาแนบไฟล์ให้ครบถ้วนก่อนบันทึก"); return; } if(fileMeet.files[0].size > 5 * 1024 * 1024 || filePatrol.files[0].size > 5 * 1024 * 1024){ showNotif('error', 'ขนาดไฟล์เกิน', "ขนาดไฟล์ต้องไม่เกิน 5MB"); return; } }
+            if (!branchSelect.value) { showNotif('error', 'แจ้งเตือน', 'กรุณาเลือกสาขา'); return; }
+            showLoading("กำลังอัปโหลดข้อมูลและไฟล์เข้าสู่ระบบ...");
+            try {
+                let meetBase64 = null, patrolBase64 = null;
+                if (fileMeet.files.length > 0) meetBase64 = await getBase64(fileMeet.files[0]);
+                if (filePatrol.files.length > 0) patrolBase64 = await getBase64(filePatrol.files[0]);
+                const payload = {
+                    id: id, timestamp: new Date().toLocaleString('th-TH'), name: document.getElementById('input-name').value, branch: branchSelect.value, meetDate: document.getElementById('input-meetDate').value, patrolDate: document.getElementById('input-patrolDate').value, monthYear: `เดือน${document.getElementById('input-month').value} ${document.getElementById('input-year').value}`,
+                    fileMeet: meetBase64 ? { mimeType: fileMeet.files[0].type, data: meetBase64.split(',')[1] } : { data: "" }, filePatrol: patrolBase64 ? { mimeType: filePatrol.files[0].type, data: patrolBase64.split(',')[1] } : { data: "" }
+                };
+                const response = await fetch(GAS_URL, { method: 'POST', body: new URLSearchParams({ action: isUpdate ? 'update' : 'submit', payload: JSON.stringify(payload) }) });
+                const result = await response.json(); hideLoading();
+                if (result.success || result.status === 'success') { showNotif('success', 'สำเร็จ', 'บันทึกข้อมูลเรียบร้อยแล้ว'); document.getElementById('submitForm').reset(); document.getElementById('form-id').value = ""; document.getElementById('edit-fileMeet-link').classList.add('hidden'); document.getElementById('edit-filePatrol-link').classList.add('hidden'); fetchDataFromGAS(); } else { showNotif('error', 'ผิดพลาด', result.message || 'ไม่สามารถบันทึกข้อมูลได้'); }
+            } catch (error) { hideLoading(); showNotif('error', 'ผิดพลาด', 'เกิดปัญหาในการเชื่อมต่อกับเซิร์ฟเวอร์'); }
+        }
+        function getBase64(file) { return new Promise((resolve, reject) => { const reader = new FileReader(); reader.readAsDataURL(file); reader.onload = () => resolve(reader.result); reader.onerror = error => reject(error); }); }
+    </script>
+</body>
+</html>
