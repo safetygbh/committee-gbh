@@ -9,7 +9,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     
     <!-- Chart.js -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js/dist/chart.umd.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     
     <!-- Phosphor Icons -->
     <script src="https://unpkg.com/@phosphor-icons/web"></script>
@@ -159,7 +159,7 @@
                     <div class="mb-8 page-break-avoid">
                         <h2 class="text-xl font-bold mb-4 bg-red-50 p-2 rounded border-l-4 border-red-500">รายชื่อผู้ไม่เข้าร่วมประชุม (ถ้ามี)</h2>
                         <table class="w-full border-collapse border border-gray-300 mb-4" id="absent-attendees-table">
-                            <thead><tr class="bg-gray-50"><th class="border border-gray-300 p-2 w-[10%] text-center">ลำดับ</th><th class="border border-gray-300 p-2 text-left w-[40%]">ชื่อ - นามสกุล</th><th class="border border-gray-300 p-2 text-left w-[40%]">ตำแหน่ง / สาเหตุที่ขาด</th><th class="border border-gray-300 p-2 w-[10%] text-center no-print">จัดการ</th></tr></thead>
+                            <thead><tr class="bg-gray-50"><th class="border border-gray-300 p-2 w-[10%] text-center">ลำดับ</th><th class="border border-gray-300 p-2 text-left w-[30%]">ชื่อ - นามสกุล</th><th class="border border-gray-300 p-2 text-left w-[25%]">ตำแหน่งใน คปอ.</th><th class="border border-gray-300 p-2 text-left w-[25%]">สาเหตุที่ขาด</th><th class="border border-gray-300 p-2 w-[10%] text-center no-print">จัดการ</th></tr></thead>
                             <tbody id="absent-attendees-body"></tbody>
                         </table>
                         <button onclick="addAbsentAttendee()" class="no-print flex items-center px-3 py-1.5 bg-red-50 text-red-600 border border-red-200 rounded text-sm font-medium font-sans"><i class="ph ph-plus-circle mr-1"></i> เพิ่มผู้ไม่เข้าประชุม</button>
@@ -451,6 +451,13 @@
         function renderChart(year) {
             const ctx = document.getElementById('monthlyChart'); 
             if(!ctx) return;
+            
+            // เพิ่มการตรวจสอบ ป้องกัน Error หาก Chart.js ยังโหลดไม่เสร็จ
+            if (typeof Chart === 'undefined') {
+                console.warn("ระบบกำลังเตรียมตัวแสดงกราฟ (Chart.js is not ready)");
+                return;
+            }
+
             const ms = ["มกราคม","กุมภาพันธ์","มีนาคม","เมษายน","พฤษภาคม","มิถุนายน","กรกฎาคม","สิงหาคม","กันยายน","ตุลาคม","พฤศจิกายน","ธันวาคม"];
             const counts = new Array(12).fill(0);
             dbData.forEach(item => { 
@@ -488,7 +495,7 @@
             
             for(let i=1; i<=5; i++) state.agendas[`a${i}`] = document.getElementById(`agenda-${i}`).value || '';
             document.querySelectorAll('#attendees-body tr').forEach(r => state.attendees.push({ n: r.querySelector('.attendee-name').value || '', p: r.querySelector('.position-select').value || '' }));
-            document.querySelectorAll('#absent-attendees-body tr').forEach(r => state.absents.push({ n: r.querySelector('.absent-name').value || '', p: r.querySelector('.absent-position').value || '' }));
+            document.querySelectorAll('#absent-attendees-body tr').forEach(r => state.absents.push({ n: r.querySelector('.absent-name').value || '', p: r.querySelector('.absent-position').value || '', r: r.querySelector('.absent-reason').value || '' }));
             document.querySelectorAll('.defect-entry').forEach(i => state.defects.push({ l: i.querySelectorAll('input')[0].value || '', r: i.querySelectorAll('input')[1].value || '', s: i.querySelector('select').value || '', d: i.querySelector('textarea').value || '' }));
             
             localStorage.setItem('reportDraftData', JSON.stringify(state));
@@ -525,7 +532,7 @@
                 if(s.attendees) s.attendees.forEach(a => { addAttendee(); const r = document.getElementById(`attendee-row-${attendeeCount}`); r.querySelector('.attendee-name').value = a.n; const p = r.querySelector('.position-select'); if(a.p && !Array.from(p.options).some(o => o.value === a.p)) p.add(new Option(a.p, a.p)); p.value = a.p || ''; });
                 
                 document.getElementById('absent-attendees-body').innerHTML = ''; absentCount = 0; 
-                if(s.absents) s.absents.forEach(a => { addAbsentAttendee(); const r = document.getElementById(`absent-row-${absentCount}`); r.querySelector('.absent-name').value = a.n; r.querySelector('.absent-position').value = a.p; });
+                if(s.absents) s.absents.forEach(a => { addAbsentAttendee(); const r = document.getElementById(`absent-row-${absentCount}`); r.querySelector('.absent-name').value = a.n; const p = r.querySelector('.absent-position'); if(a.p && !Array.from(p.options).some(o => o.value === a.p)) p.add(new Option(a.p, a.p)); p.value = a.p || ''; if (a.r) r.querySelector('.absent-reason').value = a.r; });
                 
                 document.getElementById('defects-container').innerHTML = ''; defectCount = 0; 
                 if(s.defects) s.defects.forEach(d => { addDefect(); const r = document.getElementById(`defect-item-${defectCount}`); r.querySelectorAll('input')[0].value = d.l; r.querySelectorAll('input')[1].value = d.r; r.querySelector('select').value = d.s; r.querySelector('textarea').value = d.d; });
@@ -542,10 +549,12 @@
             
             const btn = document.getElementById('btn-pdf'); 
             const origText = btn.innerHTML; 
-            btn.innerHTML = 'กำลังประมวลผล...'; 
+            btn.innerHTML = 'กำลังประมวลผล... (อาจใช้เวลาสักครู่)'; 
             btn.disabled = true;
             
-            showLoading("กำลังสร้าง PDF และส่งเข้าระบบ...");
+            // เปลี่ยนข้อความโหลดให้ชัดเจนขึ้น
+            showLoading("กำลังสร้าง PDF และเตรียมส่งข้อมูล...\n(ห้ามปิดหน้านี้เด็ดขาด)");
+            
             prepareForOutput();
             
             await document.fonts.ready;
@@ -556,10 +565,11 @@
             const filename = `รายงานคปอ_${no}_${yr}.pdf`;
 
             try {
-                const canvas = await html2canvas(element, { scale: 2, useCORS: true, letterRendering: false, windowWidth: 800 });
-                const imgData = canvas.toDataURL('image/jpeg', 1.0);
+                // แก้ไข 1: ลด scale ลงเหลือ 1.5 และใช้คุณภาพ JPEG ที่ 0.8 เพื่อลดขนาดไฟล์ให้ส่งผ่านเน็ตได้เร็วขึ้น
+                const canvas = await html2canvas(element, { scale: 1.5, useCORS: true, letterRendering: false, windowWidth: 800 });
+                const imgData = canvas.toDataURL('image/jpeg', 0.8); 
                 
-                // 1. สร้าง PDF และระบบแบ่งหน้าอัตโนมัติ (แก้ปัญหาได้มาหน้าเดียว)
+                // สร้าง PDF และแบ่งหน้า
                 const pdf = new window.jspdf.jsPDF('p', 'mm', 'a4');
                 const pdfWidth = pdf.internal.pageSize.getWidth(); 
                 const pdfHeight = pdf.internal.pageSize.getHeight();
@@ -578,7 +588,7 @@
                     heightLeft -= pdfHeight;
                 }
                 
-                // ดาวน์โหลด PDF ลงเครื่อง
+                // 1. ดาวน์โหลด PDF ลงเครื่อง
                 pdf.save(filename);
                 
                 // 2. แปลง PDF เพื่อส่งเข้าเซิร์ฟเวอร์
@@ -587,10 +597,10 @@
                 const ms = ["มกราคม","กุมภาพันธ์","มีนาคม","เมษายน","พฤษภาคม","มิถุนายน","กรกฎาคม","สิงหาคม","กันยายน","ตุลาคม","พฤศจิกายน","ธันวาคม"];
                 let y = d.getFullYear(); if(y<2500) y+=543;
 
-                // รวบรวมข้อมูลดิบทั้งหมด (ผู้เข้าร่วม, วาระประชุม, ข้อบกพร่อง)
+                // รวบรวมข้อมูลดิบ (วาระที่ 1-5, ข้อบกพร่อง)
                 const attendees = [], absents = [], defectsArr = [];
                 document.querySelectorAll('#attendees-body tr').forEach(r => { const n=r.querySelector('.attendee-name').value; const p=r.querySelector('.position-select').value; if(n) attendees.push(`${n}(${p})`); });
-                document.querySelectorAll('#absent-attendees-body tr').forEach(r => { const n=r.querySelector('.absent-name').value; const p=r.querySelector('.absent-position').value; if(n) absents.push(`${n}(${p})`); });
+                document.querySelectorAll('#absent-attendees-body tr').forEach(r => { const n=r.querySelector('.absent-name').value; const p=r.querySelector('.absent-position').value; const reason=r.querySelector('.absent-reason').value; if(n) absents.push(`${n} (${p}) - สาเหตุ: ${reason||'-'}`); });
                 
                 document.querySelectorAll('.defect-entry').forEach(i => { 
                     const l = i.querySelectorAll('input')[0].value || '-'; 
@@ -600,7 +610,6 @@
                     if(detail !== '-' || l !== '-') defectsArr.push(`สถานที่: ${l} | ผู้รับผิดชอบ: ${res} | สถานะ: ${s}\nรายละเอียด: ${detail}`); 
                 });
                 
-                // เตรียมข้อมูลวาระที่ 1-5 ครบถ้วน เพื่อเซฟลง Sheet (ข้อมูลแบบฟอร์ม)
                 const rawPayload = {
                     timestamp: new Date().toLocaleString('th-TH'), 
                     branch: document.getElementById('branch-select').value,
@@ -620,9 +629,9 @@
                     defects: defectsArr.join('\n\n---\n\n') || '-'
                 };
                 
+                showLoading("กำลังบันทึกข้อมูลแบบฟอร์ม... (1/2)");
                 await fetch(GAS_URL, { method: 'POST', body: new URLSearchParams({ action: 'saveRawForm', payload: JSON.stringify(rawPayload) }) });
 
-                // ข้อมูลสำหรับอัปโหลดไฟล์ (รายงานที่ส่งแล้ว)
                 const submitPayload = {
                     id: 'ID_AUTO_' + new Date().getTime(), 
                     timestamp: new Date().toLocaleString('th-TH'), 
@@ -635,31 +644,44 @@
                     filePatrol: { data: "" }
                 };
                 
-                await fetch(GAS_URL, { method: 'POST', body: new URLSearchParams({ action: 'submit', payload: JSON.stringify(submitPayload) }) });
+                showLoading("กำลังอัปโหลดไฟล์ PDF ขึ้นระบบ... (2/2)\nขั้นตอนนี้อาจใช้เวลา 10-30 วินาที");
+                const res = await fetch(GAS_URL, { method: 'POST', body: new URLSearchParams({ action: 'submit', payload: JSON.stringify(submitPayload) }) });
+                const finalResult = await res.json();
                 
-                hideLoading(); 
-                window.onafterprint(); 
-                btn.innerHTML = origText; 
-                btn.disabled = false;
-                showNotif('success', 'สำเร็จ', 'สร้าง PDF ดาวน์โหลดลงเครื่อง และอัปโหลดเข้าระบบเรียบร้อยแล้ว');
-                fetchDataFromGAS();
+                // แก้ไข 2: ดักจับการทำงาน เมื่ออัปโหลดเสร็จให้เปลี่ยนแท็บกลับไปหน้า Dashboard ทันที
+                if (finalResult.status === 'success' || finalResult.success) {
+                    hideLoading(); 
+                    window.onafterprint(); 
+                    btn.innerHTML = origText; 
+                    btn.disabled = false;
+                    showNotif('success', 'สำเร็จ', 'สร้าง PDF และอัปโหลดเข้าระบบเรียบร้อยแล้ว');
+                    
+                    // สั่งให้กลับไปหน้า Dashboard อัตโนมัติและรีเฟรชข้อมูล
+                    changeTab('dashboard');
+                    fetchDataFromGAS();
+                } else {
+                    throw new Error(finalResult.message || "อัปโหลดไม่สำเร็จ");
+                }
+
             } catch (error) {
                 console.error("PDF Error: ", error);
                 hideLoading(); 
                 window.onafterprint(); 
                 btn.innerHTML = origText; 
                 btn.disabled = false;
-                showNotif('error', 'ผิดพลาด', 'ไม่สามารถสร้าง PDF ได้');
+                showNotif('error', 'ผิดพลาด', 'ขนาดไฟล์ใหญ่เกินไป หรืออินเทอร์เน็ตขัดข้อง ลองกดปุ่มบันทึกใหม่อีกครั้งครับ');
             }
         };
 
+        // =====================================
+        // ฟังก์ชัน UI (เพิ่ม/ลบ ตาราง)
+        // =====================================
         function initForm() {
             for(let i=0; i<5; i++) addAttendee();
             for(let i=0; i<3; i++) addPatrolAttendee();
             addDefect(); 
             setupCanvas('creator-canvas'); 
             setupCanvas('approver-canvas');
-            
             const td = new Date(); 
             document.getElementById('meeting-date').valueAsDate = td; 
             document.getElementById('patrol-date').valueAsDate = td; 
@@ -686,7 +708,7 @@
             const tr = document.createElement('tr'); 
             tr.id = `absent-row-${absentCount}`; 
             tr.className = 'page-break-avoid';
-            tr.innerHTML = `<td class="border border-gray-300 p-2 text-center">${absentCount}</td><td class="border border-gray-300 p-0 relative"><input type="text" class="absent-name w-full h-full p-2 outline-none bg-transparent" placeholder="ระบุชื่อ"></td><td class="border border-gray-300 p-0 relative"><input type="text" class="absent-position w-full h-full p-2 outline-none bg-transparent" placeholder="สาเหตุ / ตำแหน่ง"></td><td class="border border-gray-300 p-2 text-center no-print"><button onclick="this.parentElement.parentElement.remove(); updateAbsentNumbers();" class="text-red-500 hover:text-red-700 bg-red-50 p-1.5 rounded"><i class="ph ph-trash"></i></button></td>`;
+            tr.innerHTML = `<td class="border border-gray-300 p-2 text-center">${absentCount}</td><td class="border border-gray-300 p-0 relative"><input type="text" class="absent-name w-full h-full p-2 outline-none bg-transparent" placeholder="ระบุชื่อ"></td><td class="border border-gray-300 p-0 relative"><select class="absent-position w-full h-full p-2 outline-none bg-transparent"><option value="">-- เลือก --</option>${positions.map(p=>`<option value="${p}">${p}</option>`).join('')}</select></td><td class="border border-gray-300 p-0 relative"><input type="text" class="absent-reason w-full h-full p-2 outline-none bg-transparent" placeholder="ระบุสาเหตุ"></td><td class="border border-gray-300 p-2 text-center no-print"><button onclick="this.parentElement.parentElement.remove(); updateAbsentNumbers();" class="text-red-500 hover:text-red-700 bg-red-50 p-1.5 rounded"><i class="ph ph-trash"></i></button></td>`;
             document.getElementById('absent-attendees-body').appendChild(tr); 
             updateAbsentNumbers();
         }
