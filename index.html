@@ -376,6 +376,12 @@
 
         function formatDateTH(dateString) {
             if (!dateString || dateString === "-" || dateString === "#") return "-";
+            let d = new Date(dateString);
+            if (!isNaN(d.getTime())) {
+                let y = d.getFullYear();
+                if (y < 2500) y += 543;
+                return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${y}`;
+            }
             let dp = String(dateString).split('T')[0];
             if (dp.includes('-')) { 
                 let p = dp.split('-'); 
@@ -452,7 +458,6 @@
             const ctx = document.getElementById('monthlyChart'); 
             if(!ctx) return;
             
-            // เพิ่มการตรวจสอบ ป้องกัน Error หาก Chart.js ยังโหลดไม่เสร็จ
             if (typeof Chart === 'undefined') {
                 console.warn("ระบบกำลังเตรียมตัวแสดงกราฟ (Chart.js is not ready)");
                 return;
@@ -552,7 +557,6 @@
             btn.innerHTML = 'กำลังประมวลผล... (อาจใช้เวลาสักครู่)'; 
             btn.disabled = true;
             
-            // เปลี่ยนข้อความโหลดให้ชัดเจนขึ้น
             showLoading("กำลังสร้าง PDF และเตรียมส่งข้อมูล...\n(ห้ามปิดหน้านี้เด็ดขาด)");
             
             prepareForOutput();
@@ -565,11 +569,9 @@
             const filename = `รายงานคปอ_${no}_${yr}.pdf`;
 
             try {
-                // แก้ไข 1: ลด scale ลงเหลือ 1.5 และใช้คุณภาพ JPEG ที่ 0.8 เพื่อลดขนาดไฟล์ให้ส่งผ่านเน็ตได้เร็วขึ้น
                 const canvas = await html2canvas(element, { scale: 1.5, useCORS: true, letterRendering: false, windowWidth: 800 });
                 const imgData = canvas.toDataURL('image/jpeg', 0.8); 
                 
-                // สร้าง PDF และแบ่งหน้า
                 const pdf = new window.jspdf.jsPDF('p', 'mm', 'a4');
                 const pdfWidth = pdf.internal.pageSize.getWidth(); 
                 const pdfHeight = pdf.internal.pageSize.getHeight();
@@ -588,16 +590,13 @@
                     heightLeft -= pdfHeight;
                 }
                 
-                // 1. ดาวน์โหลด PDF ลงเครื่อง
                 pdf.save(filename);
                 
-                // 2. แปลง PDF เพื่อส่งเข้าเซิร์ฟเวอร์
                 const b64 = pdf.output('datauristring').split(',')[1];
                 const d = new Date(document.getElementById('meeting-date').value || new Date());
                 const ms = ["มกราคม","กุมภาพันธ์","มีนาคม","เมษายน","พฤษภาคม","มิถุนายน","กรกฎาคม","สิงหาคม","กันยายน","ตุลาคม","พฤศจิกายน","ธันวาคม"];
                 let y = d.getFullYear(); if(y<2500) y+=543;
 
-                // รวบรวมข้อมูลดิบ (วาระที่ 1-5, ข้อบกพร่อง)
                 const attendees = [], absents = [], defectsArr = [];
                 document.querySelectorAll('#attendees-body tr').forEach(r => { const n=r.querySelector('.attendee-name').value; const p=r.querySelector('.position-select').value; if(n) attendees.push(`${n}(${p})`); });
                 document.querySelectorAll('#absent-attendees-body tr').forEach(r => { const n=r.querySelector('.absent-name').value; const p=r.querySelector('.absent-position').value; const reason=r.querySelector('.absent-reason').value; if(n) absents.push(`${n} (${p}) - สาเหตุ: ${reason||'-'}`); });
@@ -648,7 +647,6 @@
                 const res = await fetch(GAS_URL, { method: 'POST', body: new URLSearchParams({ action: 'submit', payload: JSON.stringify(submitPayload) }) });
                 const finalResult = await res.json();
                 
-                // แก้ไข 2: ดักจับการทำงาน เมื่ออัปโหลดเสร็จให้เปลี่ยนแท็บกลับไปหน้า Dashboard ทันที
                 if (finalResult.status === 'success' || finalResult.success) {
                     hideLoading(); 
                     window.onafterprint(); 
@@ -656,7 +654,6 @@
                     btn.disabled = false;
                     showNotif('success', 'สำเร็จ', 'สร้าง PDF และอัปโหลดเข้าระบบเรียบร้อยแล้ว');
                     
-                    // สั่งให้กลับไปหน้า Dashboard อัตโนมัติและรีเฟรชข้อมูล
                     changeTab('dashboard');
                     fetchDataFromGAS();
                 } else {
@@ -956,8 +953,15 @@
             if(!Array.from(b.options).some(o => o.value === data.branch)) b.add(new Option(data.branch, data.branch)); 
             b.value = data.branch;
             
-            document.getElementById('input-meetDate').value = String(data.meetDate||"").split('T')[0]; 
-            document.getElementById('input-patrolDate').value = String(data.patrolDate||"").split('T')[0];
+            // แก้ไขปัญหาการเติมข้อมูลวันที่ในหน้าแก้ไขข้อมูล ไม่ให้แสดงข้อมูลเลื่อนไป 1 วัน
+            const getLocalISODate = (dateStr) => {
+                if (!dateStr) return "";
+                const d = new Date(dateStr);
+                return isNaN(d.getTime()) ? String(dateStr).split('T')[0] : `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+            };
+            document.getElementById('input-meetDate').value = getLocalISODate(data.meetDate); 
+            document.getElementById('input-patrolDate').value = getLocalISODate(data.patrolDate);
+            
             const p = String(data.monthYear||"").replace('เดือน','').trim().split(/\s+/); 
             document.getElementById('input-month').value = p[0]||""; 
             document.getElementById('input-year').value = p[1]||"";
